@@ -1,4 +1,6 @@
 streamlit
-pandas
-astropy
 pytz
+skyfield
+astropy
+numpy
+pandas
