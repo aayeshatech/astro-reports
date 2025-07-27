@@ -47,8 +47,6 @@ nakshatras = [
     "Uttara Bhadrapada", "Revati"
 ]
 nakshatra_name = nakshatras[int((moon_longitude * 3) // 40)]
-
-# D9 sign (Navamsa) calculation
 d9_sign_index = int((moon_longitude % 40) // (40 / 12))
 d9_sign_name = zodiac_signs[d9_sign_index % 12]
 
@@ -67,7 +65,7 @@ col3.metric("🔯 D9 Sign", d9_sign_name)
 
 st.markdown("---")
 
-# === Gann Square of 9 Grid ===
+# === Gann Square of 9 Aligned Grid ===
 with st.expander("📊 Gann Square of 9 Levels (Based on Angle Steps)", expanded=True):
     base_sqrt = math.sqrt(price_input)
 
@@ -119,10 +117,8 @@ with st.expander("📊 Gann Square of 9 Levels (Based on Angle Steps)", expanded
 # === Notes Section ===
 with st.expander("📘 Notes"):
     st.markdown("""
-    - **Moon Degree**: Geocentric ecliptic longitude at selected time.
-    - **Nakshatra**: One of 27 lunar mansions influencing sentiment.
-    - **D9 Sign**: Vedic Navamsa placement for fine-tuned analysis.
-    - **Gann Square of 9**: Price projections using square root vibration theory.
-    - **Sentiment**: Based on Moon's Nakshatra – Bullish, Bearish, or Neutral.
-    - Combine astro signals with Gann levels for confluence-based entries.
-    """)
+    - **Gann Square of 9** calculates levels from the square root of CMP.
+    - Buy levels follow positive angle steps; Sell levels mirror in reverse.
+    - Each degree is mapped to a zodiac sign (30° per sign).
+    - Works well when combined with astro signals and Nakshatra-based filters.
+    """) 
