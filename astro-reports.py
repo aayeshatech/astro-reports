@@ -1,3 +1,12 @@
+try:
+    from plotly.subplots import make_subplots
+    import plotly.graph_objects as go
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+    st.warning("Plotly is not available. Some visualizations will be simplified.")
+
+# Rest of your imports
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -5,9 +14,6 @@ from datetime import datetime, timedelta, date
 import random
 import hashlib
 import calendar
-from plotly.subplots import make_subplots
-import plotly.graph_objects as go
-
 # App configuration
 st.set_page_config(
     page_title="Advanced Astro Trading Signals",
