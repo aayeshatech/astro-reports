@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 import random
 
 # Vedic Astrology Configuration
@@ -40,23 +40,27 @@ def generate_transits(symbol, start_date, timeframe):
     planetary_effects = SYMBOL_RULERSHIPS.get(symbol, {})
     
     if timeframe == "Intraday":
-        # Generate intraday transits (every 2 hours from market open)
-        for hour in [9, 11, 13, 15]:  # 9AM, 11AM, 1PM, 3PM
-            planet = random.choice(list(VEDIC_PLANETS.keys()))
-            aspect = random.choice(aspects)
-            
-            effect, impact = determine_effect(planet, aspect, planetary_effects)
-            interpretation = generate_interpretation(planet, aspect, symbol)
-            
-            transits.append({
-                "Time": f"{hour:02d}:00",
-                "Planet": f"{planet} ({VEDIC_PLANETS[planet]})",
-                "Aspect": aspect,
-                "Impact": impact,
-                "Effect": effect,
-                "Action": get_action(effect),
-                "Interpretation": interpretation
-            })
+        # Generate intraday transits from 5 AM to 11:45 PM in 30-min intervals
+        for hour in range(5, 24):  # 5 AM to 11 PM
+            for minute in [0, 30]:  # Every 30 minutes
+                if hour == 23 and minute == 30:  # Skip 11:30 PM
+                    continue
+                
+                planet = random.choice(list(VEDIC_PLANETS.keys()))
+                aspect = random.choice(aspects)
+                
+                effect, impact = determine_effect(planet, aspect, planetary_effects)
+                interpretation = generate_interpretation(planet, aspect, symbol)
+                
+                transits.append({
+                    "Time": f"{hour:02d}:{minute:02d}",
+                    "Planet": f"{planet} ({VEDIC_PLANETS[planet]})",
+                    "Aspect": aspect,
+                    "Impact": impact,
+                    "Effect": effect,
+                    "Action": get_action(effect),
+                    "Interpretation": interpretation
+                })
     else:
         days = 7 if timeframe == "Weekly" else 30
         
@@ -125,23 +129,23 @@ def generate_interpretation(planet, aspect, symbol):
 def main():
     st.title("Vedic Astro Trading Signals")
     
-    # Symbol selection with custom input
-    symbol_options = ["GOLD", "SILVER", "CRUDE", "NIFTY", "Custom"]
-    selected_symbol = st.selectbox("Select Symbol", symbol_options, index=0)
+    # Symbol input section
+    st.subheader("Symbol Selection")
+    symbol = st.text_input("Enter Symbol (e.g., GOLD, BTC, NIFTY)", "GOLD").strip().upper()
     
-    if selected_symbol == "Custom":
-        custom_symbol = st.text_input("Enter Symbol Name", "BTC").strip().upper()
-        symbol = custom_symbol if custom_symbol else "GOLD"
-    else:
-        symbol = selected_symbol
-    
+    # Timeframe selection
+    st.subheader("Analysis Parameters")
     col1, col2 = st.columns(2)
     with col1:
         timeframe = st.selectbox("Timeframe", ["Intraday", "Weekly", "Monthly"], index=0)
     with col2:
         start_date = st.date_input("Start Date", value=datetime.today())
     
-    if st.button("Generate Report"):
+    if st.button("Generate Astro Trading Report"):
+        if not symbol:
+            st.warning("Please enter a symbol")
+            return
+            
         with st.spinner(f"Generating {timeframe} Vedic astrology report for {symbol}..."):
             transit_df = generate_transits(symbol, start_date, timeframe)
             
@@ -174,7 +178,7 @@ def main():
             # Display appropriate columns based on timeframe
             if timeframe == "Intraday":
                 columns = {
-                    "Time": "Time",
+                    "Time": "Time (24h)",
                     "Planet": "Planet (Vedic)",
                     "Aspect": "Aspect",
                     "Impact": "Price Impact",
@@ -182,6 +186,7 @@ def main():
                     "Action": "Trading Action",
                     "Interpretation": "Astro Interpretation"
                 }
+                height = min(800, 35 * len(transit_df))  # Dynamic height
             else:
                 columns = {
                     "Date": "Date",
@@ -192,12 +197,13 @@ def main():
                     "Action": "Trading Action",
                     "Interpretation": "Astro Interpretation"
                 }
+                height = min(800, 35 * len(transit_df))
             
             st.dataframe(
                 styled_df,
                 column_config=columns,
                 use_container_width=True,
-                height=800,
+                height=height,
                 hide_index=True
             )
 
