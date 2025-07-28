@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, date
 import random
 import hashlib
 import calendar
+import plotly.graph_objects as go
 
 # App configuration
 st.set_page_config(
@@ -75,15 +76,47 @@ def generate_price_data(symbol, start_date, timeframe):
     
     prices = base_price * (1 + movements.cumsum())
     
-    price_df = pd.DataFrame({
+    return pd.DataFrame({
         "DateTime": dates,
-        "Price": prices.round(2)
+        "Price": prices.round(2),
+        "Open": (prices * (1 + np.random.normal(0, 0.001, len(dates))).round(2),
+        "High": (prices * (1 + np.random.normal(0.002, 0.001, len(dates))).round(2),
+        "Low": (prices * (1 + np.random.normal(-0.002, 0.001, len(dates))).round(2),
+        "Close": prices.round(2)
     })
+
+def create_tradingview_chart(df):
+    fig = go.Figure(data=[go.Candlestick(
+        x=df['DateTime'],
+        open=df['Open'],
+        high=df['High'],
+        low=df['Low'],
+        close=df['Close'],
+        increasing_line_color='green',
+        decreasing_line_color='red'
+    )])
     
-    price_df["EMA_20"] = price_df["Price"].ewm(span=20).mean().round(2)
-    price_df["EMA_50"] = price_df["Price"].ewm(span=50).mean().round(2)
+    fig.update_layout(
+        title='TradingView Style Chart',
+        xaxis_title='Date',
+        yaxis_title='Price',
+        xaxis_rangeslider_visible=False,
+        height=600,
+        margin=dict(l=20, r=20, t=40, b=20),
+        plot_bgcolor='#1e1e1e',
+        paper_bgcolor='#1e1e1e',
+        font=dict(color='white'),
+        xaxis=dict(
+            gridcolor='#444',
+            showgrid=True
+        ),
+        yaxis=dict(
+            gridcolor='#444',
+            showgrid=True
+        )
+    )
     
-    return price_df
+    return fig
 
 def main():
     st.title("📈 Advanced Astro Trading Analyzer")
@@ -125,8 +158,8 @@ def main():
             
             transit_df = generate_astro_transits(st.session_state.selected_date)
             
-            start_price = price_df["Price"].iloc[0]
-            end_price = price_df["Price"].iloc[-1]
+            start_price = price_df["Close"].iloc[0]
+            end_price = price_df["Close"].iloc[-1]
             change_pct = ((end_price - start_price) / start_price * 100)
             
             col1, col2, col3 = st.columns(3)
@@ -138,17 +171,9 @@ def main():
                 st.metric("Change", f"{change_pct:.2f}%", 
                          delta_color="inverse" if change_pct < 0 else "normal")
             
-            st.subheader("Price Movement")
-            st.line_chart(
-                price_df.set_index("DateTime")[["Price", "EMA_20", "EMA_50"]],
-                use_container_width=True
-            )
-            
-            st.subheader("Daily Percentage Changes")
-            st.bar_chart(
-                price_df.set_index("DateTime")["Price"].pct_change()*100,
-                use_container_width=True
-            )
+            st.subheader("TradingView Style Price Chart")
+            fig = create_tradingview_chart(price_df)
+            st.plotly_chart(fig, use_container_width=True)
             
             st.subheader("Planetary Transits & Market Impact")
             
