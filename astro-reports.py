@@ -13,18 +13,16 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Generate planetary transits with bullish/bearish indicators
 def generate_astro_transits(selected_date):
     planets = ["Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn"]
     aspects = ["Conjunction", "Sextile", "Square", "Trine", "Opposition"]
     
     transits = []
-    for _ in range(7):  # Generate 7 transits for the selected period
+    for _ in range(7):
         planet = random.choice(planets)
         aspect = random.choice(aspects)
         strength = random.uniform(0.5, 1.0)
         
-        # Determine influence
         if planet in ["Jupiter", "Venus"]:
             influence = "Bullish" if aspect in ["Trine", "Sextile"] else "Mildly Bullish"
         elif planet in ["Saturn", "Mars"]:
@@ -43,7 +41,6 @@ def generate_astro_transits(selected_date):
     
     return pd.DataFrame(transits)
 
-# Generate price data with astro influence
 def generate_price_data(symbol, start_date, timeframe):
     seed_str = f"{symbol}{start_date}{timeframe}"
     seed = int(hashlib.sha256(seed_str.encode()).hexdigest(), 16) % 10**8
@@ -56,47 +53,41 @@ def generate_price_data(symbol, start_date, timeframe):
     }.get(symbol, 100)
     
     if timeframe == "Intraday":
-        dates = pd.date_range(start=start_date, periods=390, freq="1min")  # 6.5 hours
+        dates = pd.date_range(start=start_date, periods=390, freq="1min")
         volatility = 0.002
     elif timeframe == "Weekly":
         dates = pd.date_range(start=start_date - timedelta(days=start_date.weekday()), 
-                            periods=35, freq="D")  # 5 weeks
+                            periods=35, freq="D")
         volatility = 0.008
-    else:  # Monthly
+    else:
         month_days = calendar.monthrange(start_date.year, start_date.month)[1]
         dates = pd.date_range(start=date(start_date.year, start_date.month, 1), 
                             periods=month_days, freq="D")
         volatility = 0.015
     
-    # Generate price with astro-influenced movements
     movements = np.random.normal(0, volatility, len(dates))
     
-    # Add astro events influence
     for i in range(1, len(dates)):
-        if i % 7 == 0:  # Simulate weekly astro influence
+        if i % 7 == 0:
             movements[i] += random.uniform(-0.01, 0.01)
-        if dates[i].day == 15:  # Simulate monthly astro influence
+        if dates[i].day == 15:
             movements[i] += random.uniform(-0.02, 0.02)
     
     prices = base_price * (1 + movements.cumsum())
     
-    # Create DataFrame first
     price_df = pd.DataFrame({
         "DateTime": dates,
         "Price": prices.round(2)
     })
     
-    # Then calculate EMAs on the DataFrame column
     price_df["EMA_20"] = price_df["Price"].ewm(span=20).mean().round(2)
     price_df["EMA_50"] = price_df["Price"].ewm(span=50).mean().round(2)
     
     return price_df
 
-# Main app
 def main():
     st.title("📈 Advanced Astro Trading Analyzer")
     
-    # Initialize session state
     if 'symbol' not in st.session_state:
         st.session_state.symbol = "NIFTY"
     if 'selected_date' not in st.session_state:
@@ -104,15 +95,12 @@ def main():
     
     with st.sidebar:
         st.header("Analysis Parameters")
-        
-        # Date selection
         st.session_state.selected_date = st.date_input(
             "Select Date", 
             value=st.session_state.selected_date,
             max_value=date.today()
         )
         
-        # Symbol selection
         symbol_options = ["NIFTY", "AAPL", "MSFT", "GOOG", "AMZN", "TSLA", "Custom"]
         selected_option = st.selectbox("Select Symbol", symbol_options, index=0)
         
@@ -123,30 +111,24 @@ def main():
         else:
             st.session_state.symbol = selected_option
         
-        # Timeframe selection
         timeframe = st.radio("Analysis Type", 
                            ["Intraday", "Weekly", "Monthly"],
                            horizontal=True)
     
-    # Generate data when date changes
     if st.session_state.selected_date:
         with st.spinner(f"Generating {timeframe} analysis for {st.session_state.symbol}..."):
-            # Generate price data
             price_df = generate_price_data(
                 st.session_state.symbol,
                 st.session_state.selected_date,
                 timeframe
             )
             
-            # Generate astro transits
             transit_df = generate_astro_transits(st.session_state.selected_date)
             
-            # Calculate summary stats
             start_price = price_df["Price"].iloc[0]
             end_price = price_df["Price"].iloc[-1]
             change_pct = ((end_price - start_price) / start_price * 100)
             
-            # Display summary cards
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("Start Price", f"${start_price:,.2f}")
@@ -156,24 +138,20 @@ def main():
                 st.metric("Change", f"{change_pct:.2f}%", 
                          delta_color="inverse" if change_pct < 0 else "normal")
             
-            # Price chart with Streamlit native charts
             st.subheader("Price Movement")
             st.line_chart(
                 price_df.set_index("DateTime")[["Price", "EMA_20", "EMA_50"]],
                 use_container_width=True
             )
             
-            # Daily changes
             st.subheader("Daily Percentage Changes")
             st.bar_chart(
                 price_df.set_index("DateTime")["Price"].pct_change()*100,
                 use_container_width=True
             )
             
-            # Show astro transits
             st.subheader("Planetary Transits & Market Impact")
             
-            # Color formatting for transits
             def color_influence(val):
                 color = 'green' if "Bullish" in val else ('red' if "Bearish" in val else 'gray')
                 return f'color: {color}'
