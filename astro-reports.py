@@ -76,35 +76,50 @@ def generate_price_data(symbol, start_date, timeframe):
     
     prices = base_price * (1 + movements.cumsum())
     
-    # Generate OHLC data with proper random variations
-    opens = prices * (1 + np.random.normal(0, 0.001, len(dates)))
-    highs = prices * (1 + np.random.normal(0.002, 0.001, len(dates)))
-    lows = prices * (1 + np.random.normal(-0.002, 0.001, len(dates)))
+    # Generate OHLC data
+    opens = prices * (1 + np.random.normal(0, 0.001, len(dates))
+    highs = prices * (1 + np.random.normal(0.002, 0.001, len(dates))
+    lows = prices * (1 + np.random.normal(-0.002, 0.001, len(dates))
     
     return pd.DataFrame({
         "DateTime": dates,
         "Open": np.round(opens, 2),
         "High": np.round(highs, 2),
         "Low": np.round(lows, 2),
-        "Close": np.round(prices, 2)
+        "Close": np.round(prices, 2),
+        "Volume": np.random.randint(1000, 10000, len(dates))  # Simulated volume
     })
 
 def create_tradingview_chart(df):
-    fig = go.Figure(data=[go.Candlestick(
+    # Create figure with secondary y-axis
+    fig = go.Figure()
+    
+    # Add candlestick chart
+    fig.add_trace(go.Candlestick(
         x=df['DateTime'],
         open=df['Open'],
         high=df['High'],
         low=df['Low'],
         close=df['Close'],
         increasing_line_color='#2ECC71',  # Green
-        decreasing_line_color='#E74C3C'   # Red
-    )])
+        decreasing_line_color='#E74C3C',  # Red
+        name='Price'
+    ))
     
+    # Add volume bars
+    fig.add_trace(go.Bar(
+        x=df['DateTime'],
+        y=df['Volume'],
+        marker_color='rgba(100, 100, 100, 0.6)',
+        name='Volume',
+        yaxis='y2'
+    ))
+    
+    # Layout configuration
     fig.update_layout(
         title=f'{st.session_state.symbol} Price Chart',
         xaxis_title='Date',
         yaxis_title='Price',
-        xaxis_rangeslider_visible=False,
         height=600,
         margin=dict(l=20, r=20, t=40, b=20),
         plot_bgcolor='#1E1E1E',
@@ -113,23 +128,30 @@ def create_tradingview_chart(df):
         xaxis=dict(
             gridcolor='#444',
             showgrid=True,
-            type='date'
+            type='date',
+            rangeslider=dict(visible=False)
         ),
         yaxis=dict(
             gridcolor='#444',
-            showgrid=True
+            showgrid=True,
+            domain=[0.2, 1]  # Leave space for volume bars
+        ),
+        yaxis2=dict(
+            title='Volume',
+            overlaying='y',
+            side='right',
+            showgrid=False,
+            domain=[0, 0.18]  # Volume bars at bottom
+        ),
+        legend=dict(
+            orientation='h',
+            yanchor='bottom',
+            y=1.02,
+            xanchor='right',
+            x=1
         )
     )
     
-    # Add volume-like bars at bottom
-    fig.add_trace(go.Bar(
-        x=df['DateTime'],
-        y=df['Close'].diff().abs()*10,
-        marker_color='rgba(100, 100, 100, 0.6)',
-        name='Activity'
-    ), secondary_y=True)
-    
-    fig.update_layout(barmode='relative')
     return fig
 
 def main():
