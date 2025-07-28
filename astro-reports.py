@@ -30,7 +30,7 @@ def generate_signals(symbol, timeframe):
     base_price = {
         "AAPL": 180, "MSFT": 300, "GOOG": 140, 
         "AMZN": 120, "TSLA": 200
-    }.get(symbol, 100)
+    }.get(symbol, 100)  # Default base price for custom symbols
     
     volatility = {
         "Intraday": 0.03,
@@ -38,7 +38,6 @@ def generate_signals(symbol, timeframe):
         "Weekly": 0.005
     }[timeframe]
     
-    # CORRECTED LINE - Added missing parenthesis
     prices = base_price * (1 + np.random.normal(0, volatility, len(dates))).cumsum()
     
     # Generate unique signals
@@ -73,28 +72,35 @@ def generate_signals(symbol, timeframe):
 def main():
     st.title("📈 Astro Trading Signals")
     
+    # Initialize session state for symbol if it doesn't exist
+    if 'symbol' not in st.session_state:
+        st.session_state.symbol = "AAPL"  # Default symbol
+    
     with st.sidebar:
         st.header("Parameters")
         
         # Symbol input with custom option
         symbol_options = ["AAPL", "MSFT", "GOOG", "AMZN", "TSLA", "Custom"]
-        selected = st.selectbox("Select Symbol", symbol_options)
+        selected_option = st.selectbox("Select Symbol", symbol_options)
         
-        if selected == "Custom":
-            symbol = st.text_input("Enter Symbol", "XYZ")
+        if selected_option == "Custom":
+            # Store custom symbol in session state
+            custom_symbol = st.text_input("Enter Symbol", "XYZ").strip().upper()
+            if custom_symbol:
+                st.session_state.symbol = custom_symbol
         else:
-            symbol = selected
+            st.session_state.symbol = selected_option
         
         # Timeframe selection
         timeframe = st.selectbox("Timeframe", ["Intraday", "Daily", "Weekly"])
         
         if st.button("Generate Signals"):
-            with st.spinner(f"Generating {timeframe} signals for {symbol}..."):
-                st.session_state.df = generate_signals(symbol, timeframe)
+            with st.spinner(f"Generating {timeframe} signals for {st.session_state.symbol}..."):
+                st.session_state.df = generate_signals(st.session_state.symbol, timeframe)
     
     # Display results
     if "df" in st.session_state:
-        st.subheader(f"{symbol} {timeframe} Signals")
+        st.subheader(f"{st.session_state.symbol} {timeframe} Signals")
         
         # Price chart
         st.line_chart(
