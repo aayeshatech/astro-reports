@@ -43,11 +43,57 @@ def generate_astro_transits(selected_date):
             "Aspect": aspect,
             "Strength": f"{strength:.1f}",
             "Influence": influence,
-            "Impact": random.choice(["Long", "Short"]),
+            "Action": random.choice(["GO LONG", "GO SHORT", "HOLD"]),
             "Change %": f"{random.uniform(0.5, 5.0):.1f}%"
         })
     
     return pd.DataFrame(transits)
+
+def generate_intraday_transits(selected_date):
+    planets = ["Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn"]
+    aspects = ["Conjunction", "Sextile", "Square", "Trine", "Opposition"]
+    
+    transits = []
+    for _ in range(12):  # Generate 12 intraday transits
+        hour = random.randint(9, 15)  # Market hours (9AM-3PM)
+        minute = random.choice([0, 15, 30, 45])
+        transit_time = datetime(selected_date.year, selected_date.month, selected_date.day, hour, minute)
+        
+        planet = random.choice(planets)
+        aspect = random.choice(aspects)
+        strength = random.uniform(0.5, 1.0)
+        
+        # Enhanced influence determination
+        if planet in ["Jupiter", "Venus"]:
+            if aspect in ["Trine", "Sextile"]:
+                influence = "Strong Bullish"
+                action = "GO LONG"
+            else:
+                influence = "Mildly Bullish"
+                action = "Consider LONG"
+        elif planet in ["Saturn", "Mars"]:
+            if aspect in ["Square", "Opposition"]:
+                influence = "Strong Bearish"
+                action = "GO SHORT"
+            else:
+                influence = "Mildly Bearish"
+                action = "Consider SHORT"
+        else:
+            influence = "Neutral"
+            action = "No Trade"
+        
+        transits.append({
+            "Time": transit_time.strftime("%H:%M"),
+            "Planet": planet,
+            "Aspect": aspect,
+            "Strength": f"{strength:.1f}",
+            "Influence": influence,
+            "Action": action,
+            "Duration (min)": random.choice([15, 30, 45, 60]),
+            "Price Impact": f"{random.uniform(0.1, 1.5):.1f}%"
+        })
+    
+    return pd.DataFrame(transits).sort_values("Time")
 
 def generate_price_data(symbol, start_date, timeframe):
     # Fetch real-time base price if yfinance is available
@@ -66,7 +112,7 @@ def generate_price_data(symbol, start_date, timeframe):
         except:
             base_price = None
     
-    # Fallback to hardcoded prices if yfinance fails or isn't available
+    # Fallback to hardcoded prices
     if not YFINANCE_AVAILABLE or base_price is None:
         base_price = {
             "AAPL": 180, "MSFT": 300, "GOOG": 140, 
@@ -207,7 +253,11 @@ def main():
                 timeframe
             )
             
-            transit_df = generate_astro_transits(st.session_state.selected_date)
+            # Generate appropriate transits based on timeframe
+            if timeframe == "Intraday":
+                transit_df = generate_intraday_transits(st.session_state.selected_date)
+            else:
+                transit_df = generate_astro_transits(st.session_state.selected_date)
             
             start_price = price_df["Close"].iloc[0]
             end_price = price_df["Close"].iloc[-1]
@@ -229,24 +279,72 @@ def main():
             st.subheader("Planetary Transits & Market Impact")
             
             def color_influence(val):
-                color = '#2ECC71' if "Bullish" in val else ('#E74C3C' if "Bearish" in val else '#95A5A6')
-                return f'color: {color}; font-weight: bold'
+                if "Strong Bullish" in val:
+                    return 'background-color: #27AE60; color: white'
+                elif "Bullish" in val:
+                    return 'background-color: #2ECC71; color: white'
+                elif "Mildly Bullish" in val:
+                    return 'background-color: #58D68D; color: white'
+                elif "Strong Bearish" in val:
+                    return 'background-color: #C0392B; color: white'
+                elif "Bearish" in val:
+                    return 'background-color: #E74C3C; color: white'
+                elif "Mildly Bearish" in val:
+                    return 'background-color: #EC7063; color: white'
+                else:
+                    return 'background-color: #95A5A6; color: white'
             
-            styled_df = transit_df.style.applymap(color_influence, subset=['Influence'])
+            def color_action(val):
+                if "GO LONG" in val:
+                    return 'background-color: #27AE60; color: white; font-weight: bold'
+                elif "GO SHORT" in val:
+                    return 'background-color: #C0392B; color: white; font-weight: bold'
+                elif "Consider" in val:
+                    return 'background-color: #F39C12; color: white'
+                else:
+                    return 'background-color: #95A5A6; color: white'
             
-            st.dataframe(
-                styled_df,
-                column_config={
-                    "Planet": "Planet",
-                    "Aspect": "Aspect",
-                    "Strength": st.column_config.NumberColumn("Strength", format="%.1f"),
-                    "Influence": "Market Influence",
-                    "Impact": "Position",
-                    "Change %": "Expected Change"
-                },
-                use_container_width=True,
-                height=400
-            )
+            # Apply styling based on timeframe
+            if timeframe == "Intraday":
+                styled_df = transit_df.style\
+                    .applymap(color_influence, subset=['Influence'])\
+                    .applymap(color_action, subset=['Action'])\
+                    .set_properties(**{'text-align': 'center'})
+                
+                st.dataframe(
+                    styled_df,
+                    column_config={
+                        "Time": "Transit Time",
+                        "Planet": "Planet",
+                        "Aspect": "Aspect",
+                        "Strength": "Strength",
+                        "Influence": "Market Influence",
+                        "Action": "Trading Action",
+                        "Duration (min)": "Effect Duration",
+                        "Price Impact": "Expected Impact"
+                    },
+                    use_container_width=True,
+                    height=600
+                )
+            else:
+                styled_df = transit_df.style\
+                    .applymap(color_influence, subset=['Influence'])\
+                    .applymap(color_action, subset=['Action'])\
+                    .set_properties(**{'text-align': 'center'})
+                
+                st.dataframe(
+                    styled_df,
+                    column_config={
+                        "Planet": "Planet",
+                        "Aspect": "Aspect",
+                        "Strength": "Strength",
+                        "Influence": "Market Influence",
+                        "Action": "Trading Action",
+                        "Change %": "Expected Impact"
+                    },
+                    use_container_width=True,
+                    height=400
+                )
 
 if __name__ == "__main__":
     main()
