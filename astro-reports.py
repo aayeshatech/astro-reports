@@ -1,12 +1,3 @@
-try:
-    from plotly.subplots import make_subplots
-    import plotly.graph_objects as go
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    PLOTLY_AVAILABLE = False
-    st.warning("Plotly is not available. Some visualizations will be simplified.")
-
-# Rest of your imports
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -14,6 +5,7 @@ from datetime import datetime, timedelta, date
 import random
 import hashlib
 import calendar
+
 # App configuration
 st.set_page_config(
     page_title="Advanced Astro Trading Signals",
@@ -159,63 +151,19 @@ def main():
                 st.metric("Change", f"{change_pct:.2f}%", 
                          delta_color="inverse" if change_pct < 0 else "normal")
             
-            # Plot interactive price chart
-            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
-                              vertical_spacing=0.05, row_heights=[0.7, 0.3])
-            
-            # Price and EMAs
-            fig.add_trace(
-                go.Scatter(
-                    x=price_df["DateTime"],
-                    y=price_df["Price"],
-                    name="Price",
-                    line=dict(color='blue', width=2)
-                ),
-                row=1, col=1
-            )
-            
-            fig.add_trace(
-                go.Scatter(
-                    x=price_df["DateTime"],
-                    y=price_df["EMA_20"],
-                    name="EMA 20",
-                    line=dict(color='orange', width=1)
-                ),
-                row=1, col=1
-            )
-            
-            fig.add_trace(
-                go.Scatter(
-                    x=price_df["DateTime"],
-                    y=price_df["EMA_50"],
-                    name="EMA 50",
-                    line=dict(color='green', width=1)
-                ),
-                row=1, col=1
+            # Price chart with Streamlit native charts
+            st.subheader("Price Movement")
+            st.line_chart(
+                price_df.set_index("DateTime")[["Price", "EMA_20", "EMA_50"]],
+                use_container_width=True
             )
             
             # Daily changes
-            fig.add_trace(
-                go.Bar(
-                    x=price_df["DateTime"],
-                    y=price_df["Price"].pct_change()*100,
-                    name="Daily % Change",
-                    marker_color=np.where(price_df["Price"].pct_change() >= 0, 'green', 'red')
-                ),
-                row=2, col=1
+            st.subheader("Daily Percentage Changes")
+            st.bar_chart(
+                price_df.set_index("DateTime")["Price"].pct_change()*100,
+                use_container_width=True
             )
-            
-            # Update layout
-            fig.update_layout(
-                height=700,
-                title=f"{st.session_state.symbol} {timeframe} Analysis ({st.session_state.selected_date.strftime('%Y-%m-%d')})",
-                hovermode="x unified"
-            )
-            
-            fig.update_yaxes(title_text="Price", row=1, col=1)
-            fig.update_yaxes(title_text="Change %", row=2, col=1)
-            
-            st.plotly_chart(fig, use_container_width=True)
             
             # Show astro transits
             st.subheader("Planetary Transits & Market Impact")
@@ -237,7 +185,8 @@ def main():
                     "Impact": "Position",
                     "Change %": "Expected Change"
                 },
-                use_container_width=True
+                use_container_width=True,
+                height=400
             )
 
 if __name__ == "__main__":
