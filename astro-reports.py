@@ -77,9 +77,9 @@ def generate_price_data(symbol, start_date, timeframe):
     prices = base_price * (1 + movements.cumsum())
     
     # Generate OHLC data
-    opens = prices * (1 + np.random.normal(0, 0.001, len(dates))
-    highs = prices * (1 + np.random.normal(0.002, 0.001, len(dates))
-    lows = prices * (1 + np.random.normal(-0.002, 0.001, len(dates))
+    opens = prices * (1 + np.random.normal(0, 0.001, len(dates)))
+    highs = prices * (1 + np.random.normal(0.002, 0.001, len(dates)))
+    lows = prices * (1 + np.random.normal(-0.002, 0.001, len(dates)))
     
     return pd.DataFrame({
         "DateTime": dates,
