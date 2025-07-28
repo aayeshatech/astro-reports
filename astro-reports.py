@@ -76,13 +76,17 @@ def generate_price_data(symbol, start_date, timeframe):
     
     prices = base_price * (1 + movements.cumsum())
     
+    # Generate OHLC data with proper random variations
+    opens = prices * (1 + np.random.normal(0, 0.001, len(dates))
+    highs = prices * (1 + np.random.normal(0.002, 0.001, len(dates))
+    lows = prices * (1 + np.random.normal(-0.002, 0.001, len(dates))
+    
     return pd.DataFrame({
         "DateTime": dates,
-        "Price": prices.round(2),
-        "Open": (prices * (1 + np.random.normal(0, 0.001, len(dates))).round(2),
-        "High": (prices * (1 + np.random.normal(0.002, 0.001, len(dates))).round(2),
-        "Low": (prices * (1 + np.random.normal(-0.002, 0.001, len(dates))).round(2),
-        "Close": prices.round(2)
+        "Open": np.round(opens, 2),
+        "High": np.round(highs, 2),
+        "Low": np.round(lows, 2),
+        "Close": np.round(prices, 2)
     })
 
 def create_tradingview_chart(df):
@@ -92,23 +96,24 @@ def create_tradingview_chart(df):
         high=df['High'],
         low=df['Low'],
         close=df['Close'],
-        increasing_line_color='green',
-        decreasing_line_color='red'
+        increasing_line_color='#2ECC71',  # Green
+        decreasing_line_color='#E74C3C'   # Red
     )])
     
     fig.update_layout(
-        title='TradingView Style Chart',
+        title=f'{st.session_state.symbol} Price Chart',
         xaxis_title='Date',
         yaxis_title='Price',
         xaxis_rangeslider_visible=False,
         height=600,
         margin=dict(l=20, r=20, t=40, b=20),
-        plot_bgcolor='#1e1e1e',
-        paper_bgcolor='#1e1e1e',
+        plot_bgcolor='#1E1E1E',  # Dark background
+        paper_bgcolor='#1E1E1E',
         font=dict(color='white'),
         xaxis=dict(
             gridcolor='#444',
-            showgrid=True
+            showgrid=True,
+            type='date'
         ),
         yaxis=dict(
             gridcolor='#444',
@@ -116,6 +121,15 @@ def create_tradingview_chart(df):
         )
     )
     
+    # Add volume-like bars at bottom
+    fig.add_trace(go.Bar(
+        x=df['DateTime'],
+        y=df['Close'].diff().abs()*10,  # Simulated volume
+        marker_color='rgba(100, 100, 100, 0.6)',
+        name='Activity'
+    ), secondary_y=True)
+    
+    fig.update_layout(barmode='relative')
     return fig
 
 def main():
@@ -178,8 +192,8 @@ def main():
             st.subheader("Planetary Transits & Market Impact")
             
             def color_influence(val):
-                color = 'green' if "Bullish" in val else ('red' if "Bearish" in val else 'gray')
-                return f'color: {color}'
+                color = '#2ECC71' if "Bullish" in val else ('#E74C3C' if "Bearish" in val else '#95A5A6')
+                return f'color: {color}; font-weight: bold'
             
             styled_df = transit_df.style.applymap(color_influence, subset=['Influence'])
             
@@ -188,7 +202,7 @@ def main():
                 column_config={
                     "Planet": "Planet",
                     "Aspect": "Aspect",
-                    "Strength": "Strength",
+                    "Strength": st.column_config.NumberColumn("Strength", format="%.1f"),
                     "Influence": "Market Influence",
                     "Impact": "Position",
                     "Change %": "Expected Change"
