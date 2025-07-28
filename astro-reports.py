@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import random
+import hashlib
 
 # App configuration
 st.set_page_config(
@@ -13,8 +14,9 @@ st.set_page_config(
 
 # Generate unique signals based on symbol and timeframe
 def generate_signals(symbol, timeframe):
-    # Base seed using symbol and timeframe
-    seed = hash(symbol + timeframe)
+    # Create a stable seed using symbol and timeframe
+    seed_str = f"{symbol}{timeframe}"
+    seed = int(hashlib.sha256(seed_str.encode()).hexdigest(), 16) % 10**8
     random.seed(seed)
     np.random.seed(seed)
     
@@ -72,22 +74,24 @@ def generate_signals(symbol, timeframe):
 def main():
     st.title("📈 Astro Trading Signals")
     
-    # Initialize session state for symbol if it doesn't exist
+    # Initialize session state
     if 'symbol' not in st.session_state:
-        st.session_state.symbol = "AAPL"  # Default symbol
+        st.session_state.symbol = "AAPL"
+    if 'custom_symbol' not in st.session_state:
+        st.session_state.custom_symbol = ""
     
     with st.sidebar:
         st.header("Parameters")
         
-        # Symbol input with custom option
+        # Symbol selection
         symbol_options = ["AAPL", "MSFT", "GOOG", "AMZN", "TSLA", "Custom"]
         selected_option = st.selectbox("Select Symbol", symbol_options)
         
         if selected_option == "Custom":
-            # Store custom symbol in session state
-            custom_symbol = st.text_input("Enter Symbol", "XYZ").strip().upper()
+            custom_symbol = st.text_input("Enter Symbol", "NIFTY").strip().upper()
             if custom_symbol:
                 st.session_state.symbol = custom_symbol
+                st.session_state.custom_symbol = custom_symbol
         else:
             st.session_state.symbol = selected_option
         
@@ -95,8 +99,12 @@ def main():
         timeframe = st.selectbox("Timeframe", ["Intraday", "Daily", "Weekly"])
         
         if st.button("Generate Signals"):
-            with st.spinner(f"Generating {timeframe} signals for {st.session_state.symbol}..."):
-                st.session_state.df = generate_signals(st.session_state.symbol, timeframe)
+            try:
+                with st.spinner(f"Generating {timeframe} signals for {st.session_state.symbol}..."):
+                    st.session_state.df = generate_signals(st.session_state.symbol, timeframe)
+            except Exception as e:
+                st.error(f"Error generating signals: {str(e)}")
+                st.stop()
     
     # Display results
     if "df" in st.session_state:
