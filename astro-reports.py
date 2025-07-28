@@ -38,7 +38,8 @@ def generate_signals(symbol, timeframe):
         "Weekly": 0.005
     }[timeframe]
     
-    prices = base_price * (1 + np.random.normal(0, volatility, len(dates)).cumsum()
+    # CORRECTED LINE - Added missing parenthesis
+    prices = base_price * (1 + np.random.normal(0, volatility, len(dates))).cumsum()
     
     # Generate unique signals
     signal_strength = {
