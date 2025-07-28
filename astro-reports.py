@@ -77,9 +77,9 @@ def generate_price_data(symbol, start_date, timeframe):
     prices = base_price * (1 + movements.cumsum())
     
     # Generate OHLC data with proper random variations
-    opens = prices * (1 + np.random.normal(0, 0.001, len(dates))
-    highs = prices * (1 + np.random.normal(0.002, 0.001, len(dates))
-    lows = prices * (1 + np.random.normal(-0.002, 0.001, len(dates))
+    opens = prices * (1 + np.random.normal(0, 0.001, len(dates)))
+    highs = prices * (1 + np.random.normal(0.002, 0.001, len(dates)))
+    lows = prices * (1 + np.random.normal(-0.002, 0.001, len(dates)))
     
     return pd.DataFrame({
         "DateTime": dates,
@@ -107,7 +107,7 @@ def create_tradingview_chart(df):
         xaxis_rangeslider_visible=False,
         height=600,
         margin=dict(l=20, r=20, t=40, b=20),
-        plot_bgcolor='#1E1E1E',  # Dark background
+        plot_bgcolor='#1E1E1E',
         paper_bgcolor='#1E1E1E',
         font=dict(color='white'),
         xaxis=dict(
@@ -124,7 +124,7 @@ def create_tradingview_chart(df):
     # Add volume-like bars at bottom
     fig.add_trace(go.Bar(
         x=df['DateTime'],
-        y=df['Close'].diff().abs()*10,  # Simulated volume
+        y=df['Close'].diff().abs()*10,
         marker_color='rgba(100, 100, 100, 0.6)',
         name='Activity'
     ), secondary_y=True)
