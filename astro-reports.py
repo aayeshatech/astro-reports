@@ -32,19 +32,22 @@ def get_nakshatra_pada(degree):
 # Function to get zodiac sign
 def get_zodiac_sign(degree):
     sign_index = int(degree // 30)
-    return zodiac_signs[sign_index]
+    return zodiac_signs[sign_index % 12]  # Ensure cycling through 12 signs
 
 # Function to calculate planetary positions
 @st.cache_data
 def get_planetary_positions(date_time, location="New Delhi"):
     try:
-        # Convert to UTC for Swiss Ephemeris (IST is UTC+5:30)
+        # Convert IST to UTC (IST is UTC+5:30)
         utc_offset = 5.5  # Hours
         utc_datetime = date_time - datetime.timedelta(hours=utc_offset)
-        jd = swe.julday(utc_datetime.year, utc_datetime.month, utc_datetime.day, utc_datetime.hour + utc_datetime.minute/60.0)
+        jd = swe.julday(utc_datetime.year, utc_datetime.month, utc_datetime.day, 
+                       utc_datetime.hour + utc_datetime.minute/60.0 + utc_datetime.second/3600.0)
         
-        # Set sidereal mode (Lahiri Ayanamsa)
+        # Set sidereal mode (Lahiri Ayanamsa) and get Ayanamsa for debugging
         swe.set_sid_mode(swe.SIDM_LAHIRI)
+        ayanamsa = swe.get_ayanamsa_ut(jd)
+        st.write(f"Debug: Ayanamsa at {jd} = {ayanamsa:.2f}°")
         
         # Planetary IDs
         planets = {
@@ -114,7 +117,7 @@ st.title("Vedic Astrology Transit Calculator")
 with st.form("transit_form"):
     date = st.date_input("Select Date", value=datetime.date(2025, 7, 29))
     start_time = st.time_input("Start Time (IST)", value=datetime.time(21, 29))
-    end_time = st.time_input("End Time (IST)", value=datetime.time(21, 40))  # Adjusted to 09:40 PM IST
+    end_time = st.time_input("End Time (IST)", value=datetime.time(21, 45))  # Adjusted to 09:45 PM IST
     location = st.text_input("Location", value="New Delhi")
     submit = st.form_submit_button("Calculate Transits")
 
@@ -171,5 +174,9 @@ if submit:
 # Instructions for running
 st.markdown("""
 ### Instructions
-
+1. Install dependencies: `pip install -r requirements.txt` and `pip install pyswisseph`.
+2. Run the app: `streamlit run script.py`.
+3. Enter the date, start time, end time, and location, then click 'Calculate Transits'.
+4. If no results appear, check the terminal for error messages or ensure `pyswisseph` is installed with ephemeris data[](https://pyswisseph.readthedocs.io/en/latest/installation.html).
+5. Verify Ayanamsa value in the debug output matches ~24° for 2025.
 """)
