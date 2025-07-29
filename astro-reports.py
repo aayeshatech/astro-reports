@@ -1,3 +1,4 @@
+```python
 import streamlit as st
 import swisseph as swe
 import pandas as pd
@@ -160,7 +161,7 @@ def get_trading_signal(aspects):
 # Function to get significant transits
 def get_significant_transits(current_positions, previous_positions=None):
     if previous_positions is None:
-        return [f"{row['Planet']} in {row['Sign']} {row['Degree']}" for _, row in current_positions.iterrows()]
+        return [f"{row['Planet']} in {row['Sign']} {row['Degree']}" for _, row in current_positions.iterrows()], []
     
     significant_changes = []
     nakshatra_changes = []
@@ -181,21 +182,41 @@ def get_significant_transits(current_positions, previous_positions=None):
                 significant_changes.append(f"{planet} entered {current_row['Nakshatra']}")
                 nakshatra_changes.append(planet)
             
-            current_deg = float(current_row["Degree"].split('°')[0]) + float(current_row["Degree"].split('°')[1].split("'")[0])/60
-            prev_deg = float(prev_degree.split('°')[0]) + float(prev_degree.split('°')[1].split("'")[0])/60
-            
-            if abs(current_deg - prev_deg) > 0.5:
-                significant_changes.append(f"{planet} moved to {current_row['Degree']}")
+            try:
+                # Parse current degree
+                current_parts = current_row["Degree"].split('°')
+                if len(current_parts) != 2:
+                    raise ValueError(f"Invalid degree format for {planet}: {current_row['Degree']}")
+                deg, min_str = current_parts
+                min_parts = min_str.split("'")
+                if len(min_parts) != 2:
+                    raise ValueError(f"Invalid minute format for {planet}: {min_str}")
+                current_deg = float(deg) + float(min_parts[0])/60
+                
+                # Parse previous degree
+                prev_parts = prev_degree.split('°')
+                if len(prev_parts) != 2:
+                    raise ValueError(f"Invalid degree format for {planet}: {prev_degree}")
+                prev_deg_val, prev_min_str = prev_parts
+                prev_min_parts = prev_min_str.split("'")
+                if len(prev_min_parts) != 2:
+                    raise ValueError(f"Invalid minute format for {planet}: {prev_min_str}")
+                prev_deg = float(prev_deg_val) + float(prev_min_parts[0])/60
+                
+                if abs(current_deg - prev_deg) > 0.5:
+                    significant_changes.append(f"{planet} moved to {current_row['Degree']}")
+            except (ValueError, IndexError) as e:
+                st.warning(f"Error parsing degrees for {planet}: {str(e)}. Skipping degree comparison.")
+                significant_changes.append(f"{planet} degree parsing failed")
         else:
             significant_changes.append(f"{planet} in {current_row['Sign']} {current_row['Degree']}")
     
     return significant_changes if significant_changes else ["No significant changes"], nakshatra_changes
 
 # Streamlit app
-st.set_page_config(layout="wide")  # Set wide layout for better visibility
+st.set_page_config(layout="wide")
 st.title("Astro Market Analyzer")
 
-# Custom CSS for table width
 st.markdown("""
     <style>
     .stDataFrame {
@@ -394,8 +415,9 @@ with tab2:
 st.markdown("""
 ### Instructions
 1. Install dependencies: `pip install -r requirements.txt` and `pip install pyswisseph`.
-2. Run the app: `streamlit run app.py`.
+2. Run the app: `streamlit run astro-reports.py`.
 3. Use the 'Planetary Report' tab to view monthly transits, starting with the first date of the month and highlighting nakshatra changes.
 4. Use the 'Stock Search' tab to input a stock symbol, date range with times, and analyze the intraday timeline with filtered aspects.
 5. Ensure Swiss Ephemeris data files are installed (see https://pyswisseph.readthedocs.io/en/latest/installation.html).
 """)
+```
