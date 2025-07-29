@@ -4,6 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, time
 import re
+import time
 
 # Vedic planet names mapping
 VEDIC_PLANETS = {
@@ -61,31 +62,52 @@ def fetch_monthly_astro_events(year, month):
     events = []
 
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, params=params, headers=headers, timeout=10)
-        r.raise_for_status()
-        soup = BeautifulSoup(r.text, "html.parser")
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        r = requests.get(url, params=params, headers=headers, timeout=15)
+        r.raise_for_status()  # Raises an HTTPError for bad responses (4xx, 5xx)
 
+        soup = BeautifulSoup(r.text, "html.parser")
         rows = soup.select("table.table-striped tbody tr")
+
+        if not rows:
+            st.warning("No events found in the table. The website structure may have changed.")
+            return events
+
         for tr in rows:
             tds = tr.find_all("td")
             if len(tds) < 3:
                 continue
-            raw_date = tds[0].text.strip()    # e.g. "Jul 4, 2025, 12:44"
+            raw_date = tds[0].text.strip()  # e.g., "Jul 4, 2025, 12:44"
             event_name = tds[1].text.strip()
             details = tds[2].text.strip()
             try:
                 dt = datetime.strptime(raw_date, "%b %d, %Y, %H:%M")
-            except:
+                events.append({
+                    "datetime": dt,
+                    "name": event_name,
+                    "details": details
+                })
+            except ValueError as ve:
+                st.warning(f"Failed to parse date '{raw_date}': {ve}")
                 continue
-            events.append({
-                "datetime": dt,
-                "name": event_name,
-                "details": details
-            })
+
+    except requests.exceptions.RequestException as e:
+        st.warning(f"Network error while fetching monthly astro events: {e}")
+        return events
     except Exception as e:
-        st.error(f"Error fetching monthly Astro events: {e}")
-        return []
+        st.warning(f"Unexpected error while fetching monthly astro events: {e}")
+        return events
+
+    if not events:
+        st.warning("No valid astro events were extracted. Using default Nakshatra.")
+        # Fallback: Add a default event to avoid breaking Nakshatra logic
+        events.append({
+            "datetime": datetime(year, month, 1),
+            "name": "Moon enters Unknown",
+            "details": ""
+        })
 
     return events
 
@@ -98,7 +120,7 @@ def fetch_daily_aspects(date_selected):
     aspects = []
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=10)
+        r = requests.get(url, headers=headers, timeout=15)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
@@ -134,7 +156,7 @@ def fetch_daily_aspects(date_selected):
             })
 
     except Exception as e:
-        st.error(f"Error fetching daily aspects: {e}")
+        st.warning(f"Error fetching daily aspects: {e}")
         return []
 
     return aspects
@@ -229,6 +251,13 @@ def build_intraday_signals(symbol, aspects, monthly_events, user_start, user_end
             'end': datetime.combine(user_start.date(), time.max),
             'nakshatra': nakshatra_events[-1]['nakshatra']
         })
+    else:
+        # Fallback if no nakshatra events
+        nakshatra_segments.append({
+            'start': user_start,
+            'end': user_end,
+            'nakshatra': "Unknown"
+        })
 
     for asp in aspects:
         dt = asp['datetime']
@@ -272,7 +301,7 @@ def build_intraday_signals(symbol, aspects, monthly_events, user_start, user_end
 def summarize_report(signals):
     bullish = sorted([f"{s['Date']} {s['Time']} ({s['Planet']})" for s in signals if 'Bullish' in s["Effect"]])
     bearish = sorted([f"{s['Date']} {s['Time']} ({s['Planet']})" for s in signals if 'Bearish' in s["Effect"]])
-    reversals = []  # can implement logic later
+    reversals = []  # Can implement logic later
     long_short = ["Long (Morning)", "Short (Evening)"]  # Placeholder
     majors = sorted(set(s["Aspect"] for s in signals))
     return {
@@ -306,9 +335,7 @@ def main():
     if st.button("Generate Signals and Reports"):
         st.info("Fetching monthly astro events (including Nakshatras) ...")
         monthly_events = fetch_monthly_astro_events(selected_date.year, selected_date.month)
-        if not monthly_events:
-            st.error("Failed to fetch monthly astro events.")
-            return
+        # No need for explicit error check here; function handles it with warnings
 
         st.info("Fetching daily planetary aspects and transits ...")
         daily_aspects = fetch_daily_aspects(selected_date)
@@ -317,17 +344,16 @@ def main():
             return
 
         signals = build_intraday_signals(symbol, daily_aspects, monthly_events, user_start, user_end)
-
         if not signals:
-            st.warning("No strong intraday trading signals (strong bullish/bearish) found for this date/time.")
+            st.warning("No strong intraday trading signals found for this date/time.")
             return
 
         df_signals = pd.DataFrame(signals)
 
         def color_effect(val):
-            return f"background-color: {'#27ae60' if 'Bullish' in val else '#e74c3c'}; color: white;"
+            return f"background-color: {'#27ae60' if 'Bullish' in val else '#e74c3c' if 'Bearish' in val else '#95a5a6'}; color: white;"
         def color_action(val):
-            return f"background-color: {'#16a085' if 'BUY' in val else '#c0392b'}; color: white; font-weight: bold;"
+            return f"background-color: {'#16a085' if 'BUY' in val else '#c0392b' if 'SELL' in val else '#7f8c8d'}; color: white; font-weight: bold;"
 
         st.subheader(f"Intraday Signals for {symbol} on {selected_date.isoformat()}")
         st.dataframe(
