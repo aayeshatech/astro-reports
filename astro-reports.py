@@ -6,6 +6,12 @@ from datetime import datetime, timedelta, time as datetime_time
 import re
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import logging
+import time
+
+# Configure logging for Streamlit Cloud
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Vedic planet names mapping
 VEDIC_PLANETS = {
@@ -15,7 +21,7 @@ VEDIC_PLANETS = {
     "Uranus": "Uranus", "Neptune": "Neptune", "Pluto": "Pluto"
 }
 
-# Basic symbol config (expand as needed)
+# Basic symbol config
 SYMBOL_CONFIG = {
     "GOLD": {
         "planets": ["Sun", "Venus", "Saturn"],
@@ -55,7 +61,7 @@ NAKSHATRA_BOOST = {
 
 def fetch_monthly_astro_events(year, month):
     """
-    Scrapes AstroSeek's Monthly Astro Calendar for major transit events for the month.
+    Scrapes AstroSeek's Monthly Astro Calendar for major transit events.
     Returns a list of dicts with 'datetime', 'name', and 'details'.
     """
     url = "https://horoscopes.astro-seek.com/monthly-astro-calendar"
@@ -64,38 +70,43 @@ def fetch_monthly_astro_events(year, month):
 
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Referer": "https://horoscopes.astro-seek.com"
         }
         session = requests.Session()
         retries = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
         session.mount("https://", HTTPAdapter(max_retries=retries))
-        r = session.get(url, params=params, headers=headers, timeout=15)
+        r = session.get(url, params=params, headers=headers, timeout=10)  # Reduced timeout
         r.raise_for_status()
 
-        # Debug: Log raw HTML and URL
+        logger.info(f"Fetching monthly events from: {r.url}")
         st.write("### Debugging Monthly Astro Events")
         st.text(f"Requested URL: {r.url}")
-        st.text(f"Raw HTML (first 1000 chars):\n{r.text[:1000]}")
+        st.text(f"Raw HTML (first 500 chars):\n{r.text[:500]}")  # Reduced for performance
 
         soup = BeautifulSoup(r.text, "html.parser")
-        rows = soup.select("table.table-striped tbody tr")
-
+        selectors = ["table.table-striped tbody tr", "table tbody tr", "table.table-responsive tbody tr"]
+        rows = []
+        for selector in selectors:
+            rows = soup.select(selector)
+            if rows:
+                st.text(f"Using selector: {selector}")
+                break
         if not rows:
-            st.warning("No events found in the table. The website structure may have changed.")
+            st.warning("No events found in any table. Possible website structure change.")
             tables = soup.find_all("table")
-            table_classes = [table.get("class") for table in tables]
+            table_classes = [table.get("class", []) for table in tables]
             st.text(f"Found tables with classes: {table_classes}")
-            # Try alternative selector
-            rows = soup.select("table tbody tr")  # Fallback selector
+            return events
 
-        date_formats = ["%b %d, %Y, %H:%M", "%B %d, %Y, %I:%M %p"]
+        date_formats = ["%b %d, %Y, %H:%M", "%B %d, %Y, %I:%M %p", "%B %d, %Y %H:%M"]
         for tr in rows:
             tds = tr.find_all("td")
             if len(tds) < 3:
                 continue
             raw_date = tds[0].text.strip()
             event_name = tds[1].text.strip()
-            details = tds[2].text.strip()
+            details = tds[2].text.strip() if len(tds) > 2 else ""
             dt = None
             for fmt in date_formats:
                 try:
@@ -113,16 +124,19 @@ def fetch_monthly_astro_events(year, month):
             }
             events.append(event_data)
             st.text(f"Extracted Event: {event_data}")
+            logger.info(f"Extracted event: {event_data}")
 
     except requests.exceptions.RequestException as e:
-        st.warning(f"Network error while fetching monthly astro events: {e}")
+        st.warning(f"Network error: {e}")
+        logger.error(f"Network error in fetch_monthly_astro_events: {e}")
         return events
     except Exception as e:
-        st.warning(f"Unexpected error while fetching monthly astro events: {e}")
+        st.warning(f"Unexpected error: {e}")
+        logger.error(f"Unexpected error in fetch_monthly_astro_events: {e}")
         return events
 
     if not events:
-        st.warning("No valid astro events were extracted. Using default Nakshatra.")
+        st.warning("No valid astro events extracted. Using default Nakshatra.")
         events.append({
             "datetime": datetime(year, month, 1),
             "name": "Moon enters Unknown",
@@ -131,39 +145,48 @@ def fetch_monthly_astro_events(year, month):
 
     st.write("### Final Monthly Events")
     st.json(events)
+    logger.info(f"Final monthly events: {len(events)} events extracted")
     return events
 
 def fetch_daily_aspects(date_selected):
     """
-    Scrapes AstroSeek's Astrology Aspects & Transits Online Calendar for aspects on selected date.
+    Scrapes AstroSeek's Astrology Aspects & Transits Calendar for aspects on selected date.
     Returns list of dicts with keys: 'datetime', 'planet1', 'aspect', 'planet2', 'orb', 'exact_time'.
     """
     url = "https://horoscopes.astro-seek.com/astrology-aspects-transits-online-calendar"
     aspects = []
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://horoscopes.astro-seek.com"
+        }
         session = requests.Session()
         retries = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
         session.mount("https://", HTTPAdapter(max_retries=retries))
-        r = session.get(url, headers=headers, timeout=15)
+        r = session.get(url, headers=headers, timeout=10)
         r.raise_for_status()
 
-        # Debug: Log raw HTML and URL
+        logger.info(f"Fetching daily aspects from: {r.url}")
         st.write("### Debugging Daily Aspects")
         st.text(f"Requested URL: {r.url}")
-        st.text(f"Raw HTML (first 1000 chars):\n{r.text[:1000]}")
+        st.text(f"Raw HTML (first 500 chars):\n{r.text[:500]}")
 
         soup = BeautifulSoup(r.text, "html.parser")
-        rows = soup.select("table.table-striped tbody tr")
-
+        selectors = ["table.table-striped tbody tr", "table tbody tr", "table.table-responsive tbody tr"]
+        rows = []
+        for selector in selectors:
+            rows = soup.select(selector)
+            if rows:
+                st.text(f"Using selector: {selector}")
+                break
         if not rows:
-            st.warning("No aspects found in the table. The website structure may have changed.")
+            st.warning("No aspects found in any table. Possible website structure change.")
             tables = soup.find_all("table")
-            table_classes = [table.get("class") for table in tables]
+            table_classes = [table.get("class", []) for table in tables]
             st.text(f"Found tables with classes: {table_classes}")
-            rows = soup.select("table tbody tr")  # Fallback selector
+            return aspects
 
-        date_formats = ["%b %d, %Y, %H:%M", "%B %d, %Y, %I:%M %p"]
+        date_formats = ["%b %d, %Y, %H:%M", "%B %d, %Y, %I:%M %p", "%B %d, %Y %H:%M"]
         for tr in rows:
             tds = tr.find_all("td")
             if len(tds) < 6:
@@ -191,18 +214,58 @@ def fetch_daily_aspects(date_selected):
             }
             aspects.append(aspect_data)
             st.text(f"Extracted Aspect: {aspect_data}")
+            logger.info(f"Extracted aspect: {aspect_data}")
 
+    except requests.exceptions.RequestException as e:
+        st.warning(f"Network error: {e}")
+        logger.error(f"Network error in fetch_daily_aspects: {e}")
+        return aspects
     except Exception as e:
-        st.warning(f"Error fetching daily aspects: {e}")
+        st.warning(f"Unexpected error: {e}")
+        logger.error(f"Unexpected error in fetch_daily_aspects: {e}")
         return aspects
 
     st.write("### Final Daily Aspects")
     st.json(aspects)
+    logger.info(f"Final daily aspects: {len(aspects)} aspects extracted")
     return aspects
+
+def fetch_monthly_astro_events_cafe(year, month):
+    """
+    Fallback: Scrapes Cafe Astrology's Monthly Calendar for astro events.
+    Returns a list of dicts with 'datetime', 'name', and 'details'.
+    """
+    url = f"https://www.cafeastrology.com/monthlycalendar{year}{month:02d}.html"
+    events = []
+    try:
+        headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://www.cafeastrology.com"}
+        session = requests.Session()
+        retries = Retry(total=3, backoff_factor=1)
+        session.mount("https://", HTTPAdapter(max_retries=retries))
+        r = session.get(url, headers=headers, timeout=10)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+        # Adjusted selector based on Cafe Astrology structure
+        rows = soup.select("div.entry-content p, div.calendar-event")  # More flexible selector
+        for element in rows:
+            text = element.text.strip()
+            if "Moon enters" in text or "Moon in" in text:
+                # Placeholder: Use a default date; improve parsing if dates are available
+                events.append({"datetime": datetime(year, month, 1), "name": text, "details": ""})
+        st.write("### Cafe Astrology Events")
+        st.json(events)
+        logger.info(f"Cafe Astrology events: {len(events)} extracted")
+    except requests.exceptions.RequestException as e:
+        st.warning(f"Network error fetching Cafe Astrology: {e}")
+        logger.error(f"Network error in fetch_monthly_astro_events_cafe: {e}")
+    except Exception as e:
+        st.warning(f"Error fetching Cafe Astrology events: {e}")
+        logger.error(f"Error in fetch_monthly_astro_events_cafe: {e}")
+    return events
 
 def calculate_effect(planet, aspect, rulers, symbol, nakshatra):
     """
-    Determines market effect based on planet, aspect, rulers config, symbol and nakshatra.
+    Determines market effect based on planet, aspect, rulers config, symbol, and nakshatra.
     Returns effect label and impact percentage string.
     """
     strength = 1.0
@@ -225,8 +288,7 @@ def calculate_effect(planet, aspect, rulers, symbol, nakshatra):
         return "Mild Bullish", f"+{0.5 * nakshatra_boost:.2f}%"
     elif aspect in bear_aspects:
         return "Mild Bearish", f"-{0.5 / nakshatra_boost:.2f}%"
-    else:
-        return "Neutral", "0.00%"
+    return "Neutral", "0.00%"
 
 def get_trading_action(effect):
     """
@@ -258,14 +320,13 @@ def generate_interpretation(planet, aspect, symbol, nakshatra):
 
 def build_intraday_signals(symbol, aspects, monthly_events, user_start, user_end):
     """
-    Combines Moon Nakshatra and planetary aspects into intraday signals with impact analysis.
+    Combines Moon Nakshatra and planetary aspects into intraday signals.
     Returns a sorted list of signal dicts.
     """
     signals = []
     rulers = SYMBOL_CONFIG[symbol]['rulers']
     planets_of_interest = set(SYMBOL_CONFIG[symbol]['planets'])
 
-    # Extract Moon Nakshatra change events
     nakshatra_events = []
     for ev in monthly_events:
         if ev['name'].lower().startswith('moon enters'):
@@ -274,13 +335,12 @@ def build_intraday_signals(symbol, aspects, monthly_events, user_start, user_end
                 nakshatra_name = m.group(1).replace('-', ' ').title()
                 nakshatra_events.append({'dt': ev['datetime'], 'nakshatra': nakshatra_name})
 
-    # Sort and create nakshatra time intervals
     nakshatra_events.sort(key=lambda x: x['dt'])
     nakshatra_segments = []
     for i in range(len(nakshatra_events) - 1):
         nakshatra_segments.append({
             'start': nakshatra_events[i]['dt'],
-            'end': nakshatra_events[i+1]['dt'],
+            'end': nakshatra_events[i + 1]['dt'],
             'nakshatra': nakshatra_events[i]['nakshatra']
         })
     if nakshatra_events:
@@ -298,11 +358,10 @@ def build_intraday_signals(symbol, aspects, monthly_events, user_start, user_end
 
     for asp in aspects:
         dt = asp['datetime']
-        if dt < user_start or dt > user_end:
+        if not (user_start <= dt <= user_end):
             continue
 
-        p1 = asp['planet1']
-        p2 = asp['planet2']
+        p1, p2 = asp['planet1'], asp['planet2']
         asp_type = asp['aspect']
 
         if p1 not in planets_of_interest and p2 not in planets_of_interest:
@@ -332,10 +391,12 @@ def build_intraday_signals(symbol, aspects, monthly_events, user_start, user_end
             "Interpretation": interp
         })
 
-    signals.sort(key=lambda x: x["DateTime"])
-    return signals
+    return sorted(signals, key=lambda x: x["DateTime"])
 
 def summarize_report(signals):
+    """
+    Summarizes trading signals into bullish, bearish, and other categories.
+    """
     bullish = sorted([f"{s['Date']} {s['Time']} ({s['Planet']})" for s in signals if 'Bullish' in s["Effect"]])
     bearish = sorted([f"{s['Date']} {s['Time']} ({s['Planet']})" for s in signals if 'Bearish' in s["Effect"]])
     reversals = []
@@ -350,14 +411,16 @@ def summarize_report(signals):
     }
 
 def main():
-    st.title("🌌 Vedic Astro Trading Signals with AstroSeek Data")
-    st.markdown("Select symbol, date, and intraday time range. Data fetched live from AstroSeek.com")
+    st.title("🌌 Vedic Astro Trading Signals")
+    st.markdown("Select symbol, date, and intraday time range. Data fetched from AstroSeek.com or Cafe Astrology as fallback.")
 
     col1, col2, col3 = st.columns(3)
     with col1:
         symbol = st.selectbox("Select Symbol", list(SYMBOL_CONFIG.keys()), index=0)
     with col2:
-        selected_date = st.date_input("Select Date", value=datetime.today().date())
+        # Default to July 1, 2024, for reliable past data
+        default_date = datetime(2024, 7, 1).date()
+        selected_date = st.date_input("Select Date", value=default_date, min_value=datetime(2023, 1, 1))
     with col3:
         start_time = st.time_input("Select Start Time", value=datetime_time(0, 0))
         end_time = st.time_input("Select End Time", value=datetime_time(23, 59))
@@ -370,87 +433,113 @@ def main():
     user_end = datetime.combine(selected_date, end_time)
 
     if st.button("Generate Signals and Reports"):
-        st.info("Fetching monthly astro events (including Nakshatras) ...")
-        monthly_events = fetch_monthly_astro_events(selected_date.year, selected_date.month)
+        try:
+            with st.spinner("Fetching data..."):
+                # Limit execution time to avoid Streamlit Cloud timeout
+                start_time = time.time()
+                timeout_limit = 30  # seconds
 
-        st.info("Fetching daily planetary aspects and transits ...")
-        daily_aspects = fetch_daily_aspects(selected_date)
-        if not daily_aspects:
-            st.warning("No planetary aspects found for this date.")
-            return
+                st.info("Fetching monthly astro events (including Nakshatras)...")
+                monthly_events = fetch_monthly_astro_events(selected_date.year, selected_date.month)
+                if not monthly_events:
+                    st.info("No AstroSeek events found. Trying Cafe Astrology...")
+                    monthly_events = fetch_monthly_astro_events_cafe(selected_date.year, selected_date.month)
+                    if not monthly_events:
+                        st.error("No fallback data available. Check date or contact support.")
+                        logger.error("No astro events from any source")
+                        return
 
-        signals = build_intraday_signals(symbol, daily_aspects, monthly_events, user_start, user_end)
-        if not signals:
-            st.warning("No strong intraday trading signals found for this date/time.")
-            return
+                st.info("Fetching daily planetary aspects and transits...")
+                daily_aspects = fetch_daily_aspects(selected_date)
+                if not daily_aspects:
+                    st.warning("No planetary aspects found for this date. Try a different date.")
+                    logger.warning(f"No aspects found for {selected_date}")
+                    return
 
-        df_signals = pd.DataFrame(signals)
+                if time.time() - start_time > timeout_limit:
+                    st.error("Operation timed out. Reduce date range or contact support.")
+                    logger.error("Data fetching exceeded timeout limit")
+                    return
 
-        def color_effect(val):
-            return f"background-color: {'#27ae60' if 'Bullish' in val else '#e74c3c' if 'Bearish' in val else '#95a5a6'}; color: white;"
-        def color_action(val):
-            return f"background-color: {'#16a085' if 'BUY' in val else '#c0392b' if 'SELL' in val else '#7f8c8d'}; color: white; font-weight: bold;"
+                signals = build_intraday_signals(symbol, daily_aspects, monthly_events, user_start, user_end)
+                if not signals:
+                    st.warning("No strong intraday trading signals found.")
+                    logger.warning(f"No signals generated for {symbol} on {selected_date}")
+                    return
 
-        st.subheader(f"Intraday Signals for {symbol} on {selected_date.isoformat()}")
-        st.dataframe(
-            df_signals.style.applymap(color_effect, subset=['Effect']).applymap(color_action, subset=['Action']).set_properties(**{'text-align': 'left'}),
-            use_container_width=True,
-            hide_index=True
-        )
+                df_signals = pd.DataFrame(signals)
 
-        # Summaries
-        daily_signals = [s for s in signals if s["Date"] == selected_date.strftime("%Y-%m-%d")]
-        start_of_week = selected_date - timedelta(days=selected_date.weekday())
-        end_of_week = start_of_week + timedelta(days=6)
-        weekly_signals = [s for s in signals if start_of_week <= datetime.strptime(s["Date"], "%Y-%m-%d").date() <= end_of_week]
-        monthly_signals = [s for s in signals if datetime.strptime(s["Date"], "%Y-%m-%d").date().month == selected_date.month and datetime.strptime(s["Date"], "%Y-%m-%d").date().year == selected_date.year]
+                def color_effect(val):
+                    return f"background-color: {'#27ae60' if 'Bullish' in val else '#e74c3c' if 'Bearish' in val else '#95a5a6'}; color: white;"
 
-        daily_report = summarize_report(daily_signals)
-        weekly_report = summarize_report(weekly_signals)
-        monthly_report = summarize_report(monthly_signals)
+                def color_action(val):
+                    return f"background-color: {'#16a085' if 'BUY' in val else '#c0392b' if 'SELL' in val else '#7f8c8d'}; color: white; font-weight: bold;"
 
-        st.subheader("Market Analysis Reports")
-        tabs = st.tabs(["Daily", "Weekly", "Monthly"])
-        with tabs[0]:
-            st.write("### Bullish Periods:")
-            st.write(", ".join(daily_report["Bullish"]))
-            st.write("### Bearish Periods:")
-            st.write(", ".join(daily_report["Bearish"]))
-            st.write("### Reversals:")
-            st.write(", ".join(daily_report["Reversals"]))
-            st.write("### Trading Strategy:")
-            st.write(", ".join(daily_report["Long/Short"]))
-            st.write("### Major Aspects:")
-            for a in daily_report["Major Aspects"]:
-                st.write(f"• {a}")
+                st.subheader(f"Intraday Signals for {symbol} on {selected_date.isoformat()}")
+                st.dataframe(
+                    df_signals.style.applymap(color_effect, subset=['Effect']).applymap(color_action, subset=['Action']).set_properties(**{'text-align': 'left'}),
+                    use_container_width=True,
+                    hide_index=True
+                )
 
-        with tabs[1]:
-            st.write("### Bullish Periods:")
-            st.write(", ".join(weekly_report["Bullish"]))
-            st.write("### Bearish Periods:")
-            st.write(", ".join(weekly_report["Bearish"]))
-            st.write("### Reversals:")
-            st.write(", ".join(weekly_report["Reversals"]))
-            st.write("### Trading Strategy:")
-            st.write(", ".join(weekly_report["Long/Short"]))
-            st.write("### Major Aspects:")
-            for a in weekly_report["Major Aspects"]:
-                st.write(f"• {a}")
+                daily_signals = [s for s in signals if s["Date"] == selected_date.strftime("%Y-%m-%d")]
+                start_of_week = selected_date - timedelta(days=selected_date.weekday())
+                end_of_week = start_of_week + timedelta(days=6)
+                weekly_signals = [s for s in signals if start_of_week <= datetime.strptime(s["Date"], "%Y-%m-%d").date() <= end_of_week]
+                monthly_signals = [s for s in signals if datetime.strptime(s["Date"], "%Y-%m-%d").date().month == selected_date.month]
 
-        with tabs[2]:
-            st.write("### Bullish Periods:")
-            st.write(", ".join(monthly_report["Bullish"]))
-            st.write("### Bearish Periods:")
-            st.write(", ".join(monthly_report["Bearish"]))
-            st.write("### Reversals:")
-            st.write(", ".join(monthly_report["Reversals"]))
-            st.write("### Trading Strategy:")
-            st.write(", ".join(monthly_report["Long/Short"]))
-            st.write("### Major Aspects:")
-            for a in monthly_report["Major Aspects"]:
-                st.write(f"• {a}")
+                daily_report = summarize_report(daily_signals)
+                weekly_report = summarize_report(weekly_signals)
+                monthly_report = summarize_report(monthly_signals)
 
-        st.success("Analysis complete.")
+                st.subheader("Market Analysis Reports")
+                tabs = st.tabs(["Daily", "Weekly", "Monthly"])
+                with tabs[0]:
+                    st.write("### Bullish Periods:")
+                    st.write(", ".join(daily_report["Bullish"]))
+                    st.write("### Bearish Periods:")
+                    st.write(", ".join(daily_report["Bearish"]))
+                    st.write("### Reversals:")
+                    st.write(", ".join(daily_report["Reversals"]))
+                    st.write("### Trading Strategy:")
+                    st.write(", ".join(daily_report["Long/Short"]))
+                    st.write("### Major Aspects:")
+                    for a in daily_report["Major Aspects"]:
+                        st.write(f"• {a}")
+
+                with tabs[1]:
+                    st.write("### Bullish Periods:")
+                    st.write(", ".join(weekly_report["Bullish"]))
+                    st.write("### Bearish Periods:")
+                    st.write(", ".join(weekly_report["Bearish"]))
+                    st.write("### Reversals:")
+                    st.write(", ".join(weekly_report["Reversals"]))
+                    st.write("### Trading Strategy:")
+                    st.write(", ".join(weekly_report["Long/Short"]))
+                    st.write("### Major Aspects:")
+                    for a in weekly_report["Major Aspects"]:
+                        st.write(f"• {a}")
+
+                with tabs[2]:
+                    st.write("### Bullish Periods:")
+                    st.write(", ".join(monthly_report["Bullish"]))
+                    st.write("### Bearish Periods:")
+                    st.write(", ".join(monthly_report["Bearish"]))
+                    st.write("### Reversals:")
+                    st.write(", ".join(monthly_report["Reversals"]))
+                    st.write("### Trading Strategy:")
+                    st.write(", ".join(monthly_report["Long/Short"]))
+                    st.write("### Major Aspects:")
+                    for a in monthly_report["Major Aspects"]:
+                        st.write(f"• {a}")
+
+                st.success("Analysis completed successfully.")
+                logger.info("Analysis completed")
+
+        except Exception as e:
+            st.error(f"App error: {str(e)}. Check logs or contact support at support@streamlit.io.")
+            logger.error(f"App error in main: {str(e)}", exc_info=True)
+            raise  # Re-raise for Streamlit Cloud logs
 
 if __name__ == "__main__":
     main()
