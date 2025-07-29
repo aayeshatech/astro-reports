@@ -171,8 +171,5 @@ if submit:
 # Instructions for running
 st.markdown("""
 ### Instructions
-1. Install dependencies: `pip install -r requirements.txt` and `pip install pyswisseph`.
-2. Run the app: `streamlit run script.py`.
-3. Enter the date, start time, end time, and location, then click 'Calculate Transits'.
-4. If no results appear, check the terminal for error messages or ensure `pyswisseph` is installed with ephemeris data[](https://pyswisseph.readthedocs.io/en/latest/installation.html).
+
 """)
