@@ -1,13 +1,7 @@
 import streamlit as st
 import pandas as pd
-import requests
-from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, time as datetime_time
-import re
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 import logging
-import time
 
 # Configure logging for Streamlit Cloud
 logging.basicConfig(level=logging.INFO)
@@ -59,209 +53,18 @@ NAKSHATRA_BOOST = {
     "NIFTY": {"Mars": ["Mrigashira", "Dhanishta"], "boost": 1.1}
 }
 
-def fetch_monthly_astro_events(year, month):
-    """
-    Scrapes AstroSeek's Monthly Astro Calendar for major transit events.
-    Returns a list of dicts with 'datetime', 'name', and 'details'.
-    """
-    url = "https://horoscopes.astro-seek.com/monthly-astro-calendar"
-    params = {"year": year, "month": month}
-    events = []
+# Static monthly events for July 2024 (example data)
+MONTHLY_EVENTS_2024 = [
+    {"datetime": datetime(2024, 7, 2, 12, 0), "name": "Moon enters Rohini", "details": "Moon at 10° Taurus"},
+    {"datetime": datetime(2024, 7, 4, 15, 30), "name": "Moon enters Mrigashira", "details": "Moon at 23° Gemini"},
+    {"datetime": datetime(2024, 7, 6, 18, 45), "name": "Moon enters Ardra", "details": "Moon at 6° Cancer"}
+]
 
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            "Referer": "https://horoscopes.astro-seek.com"
-        }
-        session = requests.Session()
-        retries = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
-        session.mount("https://", HTTPAdapter(max_retries=retries))
-        r = session.get(url, params=params, headers=headers, timeout=10)  # Reduced timeout
-        r.raise_for_status()
-
-        logger.info(f"Fetching monthly events from: {r.url}")
-        st.write("### Debugging Monthly Astro Events")
-        st.text(f"Requested URL: {r.url}")
-        st.text(f"Raw HTML (first 500 chars):\n{r.text[:500]}")  # Reduced for performance
-
-        soup = BeautifulSoup(r.text, "html.parser")
-        selectors = ["table.table-striped tbody tr", "table tbody tr", "table.table-responsive tbody tr"]
-        rows = []
-        for selector in selectors:
-            rows = soup.select(selector)
-            if rows:
-                st.text(f"Using selector: {selector}")
-                break
-        if not rows:
-            st.warning("No events found in any table. Possible website structure change.")
-            tables = soup.find_all("table")
-            table_classes = [table.get("class", []) for table in tables]
-            st.text(f"Found tables with classes: {table_classes}")
-            return events
-
-        date_formats = ["%b %d, %Y, %H:%M", "%B %d, %Y, %I:%M %p", "%B %d, %Y %H:%M"]
-        for tr in rows:
-            tds = tr.find_all("td")
-            if len(tds) < 3:
-                continue
-            raw_date = tds[0].text.strip()
-            event_name = tds[1].text.strip()
-            details = tds[2].text.strip() if len(tds) > 2 else ""
-            dt = None
-            for fmt in date_formats:
-                try:
-                    dt = datetime.strptime(raw_date, fmt)
-                    break
-                except ValueError:
-                    continue
-            if dt is None:
-                st.warning(f"Failed to parse date '{raw_date}'")
-                continue
-            event_data = {
-                "datetime": dt,
-                "name": event_name,
-                "details": details
-            }
-            events.append(event_data)
-            st.text(f"Extracted Event: {event_data}")
-            logger.info(f"Extracted event: {event_data}")
-
-    except requests.exceptions.RequestException as e:
-        st.warning(f"Network error: {e}")
-        logger.error(f"Network error in fetch_monthly_astro_events: {e}")
-        return events
-    except Exception as e:
-        st.warning(f"Unexpected error: {e}")
-        logger.error(f"Unexpected error in fetch_monthly_astro_events: {e}")
-        return events
-
-    if not events:
-        st.warning("No valid astro events extracted. Using default Nakshatra.")
-        events.append({
-            "datetime": datetime(year, month, 1),
-            "name": "Moon enters Unknown",
-            "details": ""
-        })
-
-    st.write("### Final Monthly Events")
-    st.json(events)
-    logger.info(f"Final monthly events: {len(events)} events extracted")
-    return events
-
-def fetch_daily_aspects(date_selected):
-    """
-    Scrapes AstroSeek's Astrology Aspects & Transits Calendar for aspects on selected date.
-    Returns list of dicts with keys: 'datetime', 'planet1', 'aspect', 'planet2', 'orb', 'exact_time'.
-    """
-    url = "https://horoscopes.astro-seek.com/astrology-aspects-transits-online-calendar"
-    aspects = []
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0",
-            "Referer": "https://horoscopes.astro-seek.com"
-        }
-        session = requests.Session()
-        retries = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
-        session.mount("https://", HTTPAdapter(max_retries=retries))
-        r = session.get(url, headers=headers, timeout=10)
-        r.raise_for_status()
-
-        logger.info(f"Fetching daily aspects from: {r.url}")
-        st.write("### Debugging Daily Aspects")
-        st.text(f"Requested URL: {r.url}")
-        st.text(f"Raw HTML (first 500 chars):\n{r.text[:500]}")
-
-        soup = BeautifulSoup(r.text, "html.parser")
-        selectors = ["table.table-striped tbody tr", "table tbody tr", "table.table-responsive tbody tr"]
-        rows = []
-        for selector in selectors:
-            rows = soup.select(selector)
-            if rows:
-                st.text(f"Using selector: {selector}")
-                break
-        if not rows:
-            st.warning("No aspects found in any table. Possible website structure change.")
-            tables = soup.find_all("table")
-            table_classes = [table.get("class", []) for table in tables]
-            st.text(f"Found tables with classes: {table_classes}")
-            return aspects
-
-        date_formats = ["%b %d, %Y, %H:%M", "%B %d, %Y, %I:%M %p", "%B %d, %Y %H:%M"]
-        for tr in rows:
-            tds = tr.find_all("td")
-            if len(tds) < 6:
-                continue
-            raw_date_time = tds[0].text.strip()
-            dt = None
-            for fmt in date_formats:
-                try:
-                    dt = datetime.strptime(raw_date_time, fmt)
-                    break
-                except ValueError:
-                    continue
-            if dt is None:
-                st.warning(f"Failed to parse date '{raw_date_time}'")
-                continue
-            if dt.date() != date_selected:
-                continue
-            aspect_data = {
-                "datetime": dt,
-                "planet1": tds[1].text.strip(),
-                "aspect": tds[2].text.strip(),
-                "planet2": tds[3].text.strip(),
-                "orb": tds[4].text.strip(),
-                "exact_time": tds[5].text.strip()
-            }
-            aspects.append(aspect_data)
-            st.text(f"Extracted Aspect: {aspect_data}")
-            logger.info(f"Extracted aspect: {aspect_data}")
-
-    except requests.exceptions.RequestException as e:
-        st.warning(f"Network error: {e}")
-        logger.error(f"Network error in fetch_daily_aspects: {e}")
-        return aspects
-    except Exception as e:
-        st.warning(f"Unexpected error: {e}")
-        logger.error(f"Unexpected error in fetch_daily_aspects: {e}")
-        return aspects
-
-    st.write("### Final Daily Aspects")
-    st.json(aspects)
-    logger.info(f"Final daily aspects: {len(aspects)} aspects extracted")
-    return aspects
-
-def fetch_monthly_astro_events_cafe(year, month):
-    """
-    Fallback: Scrapes Cafe Astrology's Monthly Calendar for astro events.
-    Returns a list of dicts with 'datetime', 'name', and 'details'.
-    """
-    url = f"https://www.cafeastrology.com/monthlycalendar{year}{month:02d}.html"
-    events = []
-    try:
-        headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://www.cafeastrology.com"}
-        session = requests.Session()
-        retries = Retry(total=3, backoff_factor=1)
-        session.mount("https://", HTTPAdapter(max_retries=retries))
-        r = session.get(url, headers=headers, timeout=10)
-        r.raise_for_status()
-        soup = BeautifulSoup(r.text, "html.parser")
-        # Adjusted selector based on Cafe Astrology structure
-        rows = soup.select("div.entry-content p, div.calendar-event")  # More flexible selector
-        for element in rows:
-            text = element.text.strip()
-            if "Moon enters" in text or "Moon in" in text:
-                # Placeholder: Use a default date; improve parsing if dates are available
-                events.append({"datetime": datetime(year, month, 1), "name": text, "details": ""})
-        st.write("### Cafe Astrology Events")
-        st.json(events)
-        logger.info(f"Cafe Astrology events: {len(events)} extracted")
-    except requests.exceptions.RequestException as e:
-        st.warning(f"Network error fetching Cafe Astrology: {e}")
-        logger.error(f"Network error in fetch_monthly_astro_events_cafe: {e}")
-    except Exception as e:
-        st.warning(f"Error fetching Cafe Astrology events: {e}")
-        logger.error(f"Error in fetch_monthly_astro_events_cafe: {e}")
-    return events
+# Static daily aspects for July 1, 2024 (example data)
+DAILY_ASPECTS_2024 = [
+    {"datetime": datetime(2024, 7, 1, 9, 15), "planet1": "Sun", "aspect": "Trine", "planet2": "Jupiter", "orb": "1°", "exact_time": "09:17"},
+    {"datetime": datetime(2024, 7, 1, 14, 30), "planet1": "Moon", "aspect": "Sextile", "planet2": "Venus", "orb": "2°", "exact_time": "14:32"}
+]
 
 def calculate_effect(planet, aspect, rulers, symbol, nakshatra):
     """
@@ -412,15 +215,15 @@ def summarize_report(signals):
 
 def main():
     st.title("🌌 Vedic Astro Trading Signals")
-    st.markdown("Select symbol, date, and intraday time range. Data fetched from AstroSeek.com or Cafe Astrology as fallback.")
+    st.markdown("Static data for July 2024. Select symbol and time range for analysis.")
 
     col1, col2, col3 = st.columns(3)
     with col1:
         symbol = st.selectbox("Select Symbol", list(SYMBOL_CONFIG.keys()), index=0)
     with col2:
-        # Default to July 1, 2024, for reliable past data
-        default_date = datetime(2024, 7, 1).date()
-        selected_date = st.date_input("Select Date", value=default_date, min_value=datetime(2023, 1, 1))
+        # Fixed to July 1, 2024, for reliable static data
+        selected_date = datetime(2024, 7, 1).date()
+        selected_date = st.date_input("Select Date", value=selected_date, min_value=datetime(2024, 7, 1), max_value=datetime(2024, 7, 31))
     with col3:
         start_time = st.time_input("Select Start Time", value=datetime_time(0, 0))
         end_time = st.time_input("Select End Time", value=datetime_time(23, 59))
@@ -434,37 +237,20 @@ def main():
 
     if st.button("Generate Signals and Reports"):
         try:
-            with st.spinner("Fetching data..."):
-                # Limit execution time to avoid Streamlit Cloud timeout
-                start_time = time.time()
-                timeout_limit = 30  # seconds
+            with st.spinner("Generating signals..."):
+                # Use static data to avoid scraping errors
+                monthly_events = MONTHLY_EVENTS_2024
+                daily_aspects = [a for a in DAILY_ASPECTS_2024 if a["datetime"].date() == selected_date]
 
-                st.info("Fetching monthly astro events (including Nakshatras)...")
-                monthly_events = fetch_monthly_astro_events(selected_date.year, selected_date.month)
-                if not monthly_events:
-                    st.info("No AstroSeek events found. Trying Cafe Astrology...")
-                    monthly_events = fetch_monthly_astro_events_cafe(selected_date.year, selected_date.month)
-                    if not monthly_events:
-                        st.error("No fallback data available. Check date or contact support.")
-                        logger.error("No astro events from any source")
-                        return
-
-                st.info("Fetching daily planetary aspects and transits...")
-                daily_aspects = fetch_daily_aspects(selected_date)
                 if not daily_aspects:
-                    st.warning("No planetary aspects found for this date. Try a different date.")
-                    logger.warning(f"No aspects found for {selected_date}")
-                    return
-
-                if time.time() - start_time > timeout_limit:
-                    st.error("Operation timed out. Reduce date range or contact support.")
-                    logger.error("Data fetching exceeded timeout limit")
+                    st.warning("No aspects available for this date in static data.")
+                    logger.warning(f"No aspects for {selected_date}")
                     return
 
                 signals = build_intraday_signals(symbol, daily_aspects, monthly_events, user_start, user_end)
                 if not signals:
                     st.warning("No strong intraday trading signals found.")
-                    logger.warning(f"No signals generated for {symbol} on {selected_date}")
+                    logger.warning(f"No signals for {symbol} on {selected_date}")
                     return
 
                 df_signals = pd.DataFrame(signals)
@@ -537,7 +323,7 @@ def main():
                 logger.info("Analysis completed")
 
         except Exception as e:
-            st.error(f"App error: {str(e)}. Check logs or contact support at support@streamlit.io.")
+            st.error(f"App error: {str(e)}. Contact support at support@streamlit.io with logs.")
             logger.error(f"App error in main: {str(e)}", exc_info=True)
             raise  # Re-raise for Streamlit Cloud logs
 
