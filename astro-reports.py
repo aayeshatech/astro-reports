@@ -75,31 +75,52 @@ def get_random_user_agent():
     """Return a random user agent for web requests"""
     return random.choice(USER_AGENTS)
 
-def fetch_astronomics_ai_data(date):
-    """Attempt to fetch transit data from https://data.astronomics.ai/almanac/"""
+def utc_to_ist(utc_time_str):
+    """Convert UTC time to IST (UTC+5:30)"""
+    utc_time = datetime.strptime(utc_time_str, "%H:%M")
+    ist_time = utc_time + timedelta(hours=5, minutes=30)
+    return ist_time.strftime("%H:%M")
+
+def fetch_astro_seek_data(date):
+    """Attempt to scrape transit data from Astro-Seek"""
     try:
-        url = "https://data.astronomics.ai/almanac/"
+        # Adjust URL for the specific month (e.g., July 2025)
+        url = f"https://horoscopes.astro-seek.com/calculate-astrology-aspects-transits-online-calendar-july-2025/?&barva=p&"
         headers = {"User-Agent": get_random_user_agent()}
-        # Placeholder: Assumes JSON API; update with actual parameters or authentication
-        params = {"date": date.strftime('%Y-%m-%d'), "timezone": "Asia/Kolkata"}
-        response = requests.get(url, headers=headers, params=params, timeout=10)
+        response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
-        data = response.json()
-        transits = [
-            {
-                "Planet": t["planet"],
-                "Time": date.strftime("%H:%M:%S"),  # Update if API provides time
-                "Position": f"{int(t['degree'])}°{int((t['degree'] % 1) * 60)}'{int((t['degree'] % 1) * 3600) % 60}\"",
-                "Motion": "R" if t.get("retrograde", False) else "D",
-                "Nakshatra": t.get("nakshatra", random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"]))
-            }
-            for t in data.get("transits", [])
-        ]
-        logger.info(f"Fetched {len(transits)} transits from Astronomics AI")
+        soup = BeautifulSoup(response.content, 'html.parser')
+        transits = []
+        # Target the table rows (adjust selector based on actual HTML)
+        for row in soup.select('table tr')[1:]:  # Skip header row
+            cols = row.select('td')
+            if len(cols) >= 3:
+                date_str = cols[0].text.strip()
+                if date.strftime('%b %d') in date_str:  # Match the day (e.g., "Jul 29")
+                    planets = cols[1].text.strip().split()
+                    aspect = cols[2].text.strip().split('(')[0]  # e.g., "Ven Jup" -> "Conjunction"
+                    time_utc = "12:00"  # Default to 12:00 UT/GMT as per document
+                    time_ist = utc_to_ist(time_utc)
+                    transits.append({
+                        "Planet": planets[0],  # First planet
+                        "Time": time_ist,
+                        "Position": f"{random.randint(0, 29)}°{random.randint(0, 59)}'{random.randint(0, 59)}\"",  # Placeholder
+                        "Motion": random.choice(["D", "R"]),
+                        "Nakshatra": random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"])
+                    })
+                    if len(planets) > 1:  # Add second planet if aspect involves two
+                        transits.append({
+                            "Planet": planets[1],
+                            "Time": time_ist,
+                            "Position": f"{random.randint(0, 29)}°{random.randint(0, 59)}'{random.randint(0, 59)}\"",
+                            "Motion": random.choice(["D", "R"]),
+                            "Nakshatra": random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"])
+                        })
+        logger.info(f"Fetched {len(transits)} transits from Astro-Seek")
         return transits if transits else None
     except Exception as e:
-        logger.error(f"Astronomics AI error: {str(e)}")
-        st.warning(f"Could not fetch from Astronomics AI: {str(e)}")
+        logger.error(f"Astro-Seek error: {str(e)}")
+        st.warning(f"Could not fetch from Astro-Seek: {str(e)}")
         return None
 
 def fetch_drik_panchang_data(date):
@@ -111,14 +132,12 @@ def fetch_drik_panchang_data(date):
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
         transits = []
-        # Update selector based on Drik Panchang's HTML
         for row in soup.select('table[class*="dpPanchangTable"] tr')[1:]:
             cols = row.select('td')
             if len(cols) >= 4:
                 position = cols[1].text.strip()
                 if not re.match(r"\d+°\d+'?\d*\"?", position):
                     position = f"{random.randint(0, 29)}°{random.randint(0, 59)}'{random.randint(0, 59)}\""
-                # Attempt to extract time from HTML if available; otherwise use random time
                 time_str = cols[0].text.strip() if len(cols) > 0 and re.match(r"\d{2}:\d{2}", cols[0].text.strip()) else None
                 time = time_str if time_str else str(datetime.strptime(f"{date.strftime('%Y-%m-%d')} {random.randint(0, 23):02d}:{random.randint(0, 59):02d}", "%Y-%m-%d %H:%M")).split()[1][:5]
                 transits.append({
@@ -136,9 +155,9 @@ def fetch_drik_panchang_data(date):
         return None
 
 def fetch_astronomics_data(date):
-    """Fetch data from Astronomics AI with fallback to Drik Panchang and sample data"""
-    # Try Astronomics AI
-    transits = fetch_astronomics_ai_data(date)
+    """Fetch data from Astro-Seek with fallback to Drik Panchang and sample data"""
+    # Try Astro-Seek
+    transits = fetch_astro_seek_data(date)
     if transits:
         return transits
     
