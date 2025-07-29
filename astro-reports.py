@@ -10,7 +10,6 @@ import re
 try:
     from kerykeion import AstrologicalSubject
 except ImportError:
-    st.warning("The 'kerykeion' package is not installed. Please install it by running 'pip install kerykeion' in your terminal or adding 'kerykeion' to your requirements.txt file and redeploying. Falling back to other data sources.")
     AstrologicalSubject = None
 
 # Set up logging
@@ -38,7 +37,7 @@ NAKSHATRA_BOOST = {
     "NIFTY": {"Mars": ["Mrigashira", "Dhanishta"], "boost": 1.1}
 }
 
-# Trading symbol configurations (used only for effects)
+# Trading symbol configurations
 SYMBOL_CONFIG = {
     "GOLD": {
         "planets": ["Sun", "Venus", "Saturn"],
@@ -93,10 +92,10 @@ def fetch_kerykeion_data(date):
     if AstrologicalSubject is None:
         return None
     try:
-        # Use 04:43 PM IST (11:13 UTC) as the base time for the day
+        # Use 04:50 PM IST (11:20 UTC) as the base time
         transit = AstrologicalSubject(
-            "Transit", date.year, date.month, date.day, 11, 13,  # 04:43 PM UTC
-            "Mumbai", "IN",  # Approximate location for IST
+            "Transit", date.year, date.month, date.day, 11, 20,  # 04:50 PM UTC
+            "Mumbai", "IN",
             tz_str="Asia/Kolkata"
         )
         transits = []
@@ -113,8 +112,6 @@ def fetch_kerykeion_data(date):
                 "Motion": "R" if retrograde else "D",
                 "Nakshatra": random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"])
             })
-        logger.info(f"Calculated {len(transits)} transits from Kerykeion")
-        # Add provided 17:30 IST transits for July 29, 2025
         if date.strftime('%Y-%m-%d') == "2025-07-29":
             transits.extend([
                 {"Planet": "Saturn", "Time": "17:30", "Position": f"{random.randint(0, 29)}°{random.randint(0, 59)}'{random.randint(0, 59)}\"", "Motion": "R", "Nakshatra": "Hasta"},
@@ -129,11 +126,10 @@ def fetch_kerykeion_data(date):
         return transits if transits else None
     except Exception as e:
         logger.error(f"Kerykeion error: {str(e)}")
-        st.warning(f"Could not calculate with Kerykeion: {str(e)}")
         return None
 
 def fetch_astro_seek_data(date):
-    """Attempt to scrape transit data from Astro-Seek with multiple time slots"""
+    """Attempt to scrape transit data from Astro-Seek"""
     try:
         url = f"https://horoscopes.astro-seek.com/calculate-astrology-aspects-transits-online-calendar-july-2025/?&barva=p&"
         headers = {"User-Agent": get_random_user_agent()}
@@ -142,15 +138,14 @@ def fetch_astro_seek_data(date):
         soup = BeautifulSoup(response.content, 'html.parser')
         transits = []
         time_slots = ["00:00", "02:00", "04:00", "06:00", "08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00", "22:00"]
-        for row in soup.select('table tr')[1:]:  # Skip header row
+        for row in soup.select('table tr')[1:]:
             cols = row.select('td')
             if len(cols) >= 3:
                 date_str = cols[0].text.strip()
                 if date.strftime('%b %d') in date_str:
                     planets = cols[1].text.strip().split()
                     aspect = cols[2].text.strip().split('(')[0]
-                    for time_utc in time_slots:
-                        time_ist = utc_to_ist(time_utc)
+                    for time_ist in time_slots:
                         transits.append({
                             "Planet": planets[0],
                             "Time": time_ist,
@@ -166,7 +161,6 @@ def fetch_astro_seek_data(date):
                                 "Motion": random.choice(["D", "R"]),
                                 "Nakshatra": random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"])
                             })
-        logger.info(f"Fetched {len(transits)} transits from Astro-Seek")
         if date.strftime('%Y-%m-%d') == "2025-07-29":
             transits.extend([
                 {"Planet": "Saturn", "Time": "17:30", "Position": f"{random.randint(0, 29)}°{random.randint(0, 59)}'{random.randint(0, 59)}\"", "Motion": "R", "Nakshatra": "Hasta"},
@@ -181,11 +175,10 @@ def fetch_astro_seek_data(date):
         return transits if transits else None
     except Exception as e:
         logger.error(f"Astro-Seek error: {str(e)}")
-        st.warning(f"Could not fetch from Astro-Seek: {str(e)}")
         return None
 
 def fetch_drik_panchang_data(date):
-    """Attempt to scrape transit data from Drik Panchang with multiple time slots"""
+    """Attempt to scrape transit data from Drik Panchang"""
     try:
         url = f"https://www.drikpanchang.com/panchang/day-panchang.html?date={date.strftime('%d/%m/%Y')}"
         headers = {"User-Agent": get_random_user_agent()}
@@ -208,7 +201,6 @@ def fetch_drik_panchang_data(date):
                         "Motion": "R" if "Retrograde" in cols[2].text else "D",
                         "Nakshatra": cols[3].text.strip() if len(cols) > 3 else random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"])
                     })
-        logger.info(f"Fetched {len(transits)} transits from Drik Panchang")
         if date.strftime('%Y-%m-%d') == "2025-07-29":
             transits.extend([
                 {"Planet": "Saturn", "Time": "17:30", "Position": f"{random.randint(0, 29)}°{random.randint(0, 59)}'{random.randint(0, 59)}\"", "Motion": "R", "Nakshatra": "Hasta"},
@@ -223,27 +215,19 @@ def fetch_drik_panchang_data(date):
         return transits if transits else None
     except Exception as e:
         logger.error(f"Drik Panchang error: {str(e)}")
-        st.warning(f"Could not fetch from Drik Panchang: {str(e)}")
         return None
 
 def fetch_astronomics_data(date):
     """Fetch data from Kerykeion with fallback to Astro-Seek and Drik Panchang"""
-    # Try Kerykeion
     transits = fetch_kerykeion_data(date)
     if transits:
         return transits
-    
-    # Try Astro-Seek
     transits = fetch_astro_seek_data(date)
     if transits:
         return transits
-    
-    # Try Drik Panchang
     transits = fetch_drik_panchang_data(date)
     if transits:
         return transits
-    
-    # Fallback to sample data
     logger.info("Using sample data as fallback")
     st.info("Using sample data (real data unavailable)")
     return generate_sample_data(date)
@@ -254,7 +238,6 @@ def generate_sample_data(date):
     nakshatras = ["Rohini", "Hasta", "Krittika", "Punarvasu", "Mrigashira", "Dhanishta"]
     transits = []
     time_slots = ["00:00", "02:00", "04:00", "06:00", "08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00", "22:00"]
-    # Add transits for each time slot
     for time_str in time_slots:
         for planet in planets:
             transits.append({
@@ -264,7 +247,6 @@ def generate_sample_data(date):
                 "Motion": random.choice(["D", "R"]),
                 "Nakshatra": random.choice(nakshatras)
             })
-    # Add 17:30 IST transits for July 29, 2025
     if date.strftime('%Y-%m-%d') == "2025-07-29":
         transits.extend([
             {"Planet": "Saturn", "Time": "17:30", "Position": f"{random.randint(0, 29)}°{random.randint(0, 59)}'{random.randint(0, 59)}\"", "Motion": "R", "Nakshatra": "Hasta"},
@@ -279,11 +261,10 @@ def generate_sample_data(date):
     return transits
 
 def calculate_aspect(position):
-    """Calculate aspect based on zodiac position with robust parsing"""
+    """Calculate aspect based on zodiac position"""
     try:
         match = re.match(r"(\d+)°(\d+)'?(\d*)\"?", position)
         if not match:
-            logger.warning(f"Invalid position format: {position}")
             return random.choice(["Conjunction", "Sextile", "Square", "Trine"])
         deg = float(match.group(1))
         if deg % 30 < 5 or deg % 30 > 25:
@@ -296,9 +277,8 @@ def calculate_aspect(position):
             return "Trine"
         elif 175 < deg % 180 < 185:
             return "Opposition"
-    except Exception as e:
-        logger.error(f"Error in calculate_aspect: {str(e)}")
-    return random.choice(["Conjunction", "Sextile", "Square", "Trine"])
+    except Exception:
+        return random.choice(["Conjunction", "Sextile", "Square", "Trine"])
 
 def determine_effect(planet, aspect, rulers, motion, symbol, nakshatra):
     """Determine market effect with motion and Nakshatra consideration"""
@@ -307,13 +287,11 @@ def determine_effect(planet, aspect, rulers, motion, symbol, nakshatra):
     if symbol in NAKSHATRA_BOOST and planet in NAKSHATRA_BOOST[symbol]:
         if nakshatra in NAKSHATRA_BOOST[symbol][planet]:
             nakshatra_boost = NAKSHATRA_BOOST[symbol]["boost"]
-    
     if planet in rulers:
         if aspect in rulers[planet].get("strong", []):
             return "Strong Bullish", f"+{random.uniform(0.8, 1.5) * strength * nakshatra_boost:.1f}%"
         elif aspect in rulers[planet].get("weak", []):
             return "Strong Bearish", f"-{random.uniform(0.8, 1.5) * strength / nakshatra_boost:.1f}%"
-    
     return random.choice(["Mild Bullish", "Mild Bearish", "Neutral"]), f"{random.uniform(-0.3, 0.3) * nakshatra_boost:.1f}%"
 
 def get_trading_action(effect):
@@ -338,20 +316,29 @@ def generate_interpretation(planet, aspect, symbol, nakshatra):
     }.get(aspect, f"{vedic} affecting {symbol} market")
     return f"{base} (Nakshatra: {nakshatra})"
 
+def generate_timeline(symbol, transits):
+    """Generate bullish/bearish timeline based on aspects"""
+    timeline = {"Bullish": [], "Bearish": []}
+    for transit in transits:
+        aspect = calculate_aspect(transit.get("Position", "0°0'0\""))
+        if aspect in ["Trine", "Sextile"]:
+            timeline["Bullish"].append(transit["Time"])
+        elif aspect in ["Square", "Opposition"]:
+            timeline["Bearish"].append(transit["Time"])
+    return timeline
+
 def generate_signals(symbol, transits):
-    """Generate trading signals from all transit data (no symbol filtering)"""
-    config = SYMBOL_CONFIG.get(symbol, {})  # Used only for effect calculation
+    """Generate trading signals from all transit data"""
+    config = SYMBOL_CONFIG.get(symbol, {})
     signals = []
-    
     for transit in transits:
         planet = transit.get("Planet")
         if not planet:
-            continue  # Skip invalid entries
-            
+            continue
         aspect = calculate_aspect(transit.get("Position", "0°0'0\""))
         effect, impact = determine_effect(planet, aspect, config.get("rulers", {}), transit.get("Motion", "D"), symbol, transit.get("Nakshatra", "Unknown"))
-        
         signals.append({
+            "Date": "2025-07-29",
             "Time": transit.get("Time", "00:00"),
             "Planet": f"{planet} ({VEDIC_PLANETS.get(planet, planet)})",
             "Aspect": aspect,
@@ -361,36 +348,32 @@ def generate_signals(symbol, transits):
             "Action": get_trading_action(effect),
             "Interpretation": generate_interpretation(planet, aspect, symbol, transit.get("Nakshatra", "Unknown"))
         })
-    
     return signals
 
 def main():
     """Main application function"""
     col1, col2 = st.columns(2)
     with col1:
-        symbol = st.selectbox(
-            "Select Symbol",
-            list(SYMBOL_CONFIG.keys()),
-            index=0
-        )
+        symbol = st.selectbox("Select Symbol", list(SYMBOL_CONFIG.keys()), index=0)
     with col2:
-        selected_date = st.date_input(
-            "Select Date",
-            value=datetime.now()
-        )
+        selected_date = st.date_input("Select Date", value=datetime.now())
 
     if st.button("Generate Trading Signals"):
         with st.spinner("Analyzing planetary transits..."):
             try:
-                # Fetch transit data
                 transits = fetch_astronomics_data(selected_date)
-                
                 if not transits:
                     st.warning("No transit data available")
                     st.stop()
                 
+                # Generate timeline
+                timeline = generate_timeline(symbol, transits)
+                st.subheader("Bullish/Bearish Timeline")
+                st.write("**Bullish Periods (IST):**", ", ".join(timeline["Bullish"]))
+                st.write("**Bearish Periods (IST):**", ", ".join(timeline["Bearish"]))
+
+                # Generate signals
                 signals = generate_signals(symbol, transits)
-                
                 if not signals:
                     st.warning("No planetary aspects found for the selected date")
                     st.stop()
@@ -424,9 +407,11 @@ def main():
                     .applymap(color_action, subset=['Action'])\
                     .set_properties(**{'text-align': 'left'})
                 
+                st.subheader("Detailed Transit Analysis")
                 st.dataframe(
                     styled_df,
                     column_config={
+                        "Date": "Date",
                         "Time": "Time",
                         "Planet": "Planet",
                         "Aspect": "Aspect",
