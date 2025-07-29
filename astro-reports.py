@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from bs4 import BeautifulSoup
 import random
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 # Configure page
 st.set_page_config(page_title="Vedic Astro Trader", layout="wide")
 st.title("🌌 Vedic Astro Trading Signals")
-st.markdown("### Planetary Transit & Nakshatra Analysis")
+st.markdown("### Planetary Transit & Nakshatra Analysis for the Day")
 
 # Vedic Astrology Configuration
 VEDIC_PLANETS = {
@@ -80,14 +80,15 @@ def fetch_astronomics_ai_data(date):
     try:
         url = "https://data.astronomics.ai/almanac/"
         headers = {"User-Agent": get_random_user_agent()}
-        # Placeholder: Assumes JSON API; update based on actual API documentation
-        response = requests.get(url, headers=headers, timeout=10)
+        # Placeholder: Assumes JSON API; update with actual parameters or authentication
+        params = {"date": date.strftime('%Y-%m-%d'), "timezone": "Asia/Kolkata"}
+        response = requests.get(url, headers=headers, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
         transits = [
             {
                 "Planet": t["planet"],
-                "Time": date.strftime("%H:%M:%S"),
+                "Time": date.strftime("%H:%M:%S"),  # Update if API provides time
                 "Position": f"{int(t['degree'])}°{int((t['degree'] % 1) * 60)}'{int((t['degree'] % 1) * 3600) % 60}\"",
                 "Motion": "R" if t.get("retrograde", False) else "D",
                 "Nakshatra": t.get("nakshatra", random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"]))
@@ -117,9 +118,12 @@ def fetch_drik_panchang_data(date):
                 position = cols[1].text.strip()
                 if not re.match(r"\d+°\d+'?\d*\"?", position):
                     position = f"{random.randint(0, 29)}°{random.randint(0, 59)}'{random.randint(0, 59)}\""
+                # Attempt to extract time from HTML if available; otherwise use random time
+                time_str = cols[0].text.strip() if len(cols) > 0 and re.match(r"\d{2}:\d{2}", cols[0].text.strip()) else None
+                time = time_str if time_str else str(datetime.strptime(f"{date.strftime('%Y-%m-%d')} {random.randint(0, 23):02d}:{random.randint(0, 59):02d}", "%Y-%m-%d %H:%M")).split()[1][:5]
                 transits.append({
-                    "Planet": cols[0].text.strip(),
-                    "Time": date.strftime("%H:%M:%S"),
+                    "Planet": cols[0].text.strip().split()[0] if len(cols) > 0 else random.choice(list(VEDIC_PLANETS.keys())),
+                    "Time": time,
                     "Position": position,
                     "Motion": "R" if "Retrograde" in cols[2].text else "D",
                     "Nakshatra": cols[3].text.strip() if len(cols) > 3 else random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"])
@@ -149,16 +153,16 @@ def fetch_astronomics_data(date):
     return generate_sample_data(date)
 
 def generate_sample_data(date):
-    """Generate sample data with Nakshatras"""
+    """Generate sample data with varied times and Nakshatras for the day"""
     planets = list(VEDIC_PLANETS.keys())
     nakshatras = ["Rohini", "Hasta", "Krittika", "Punarvasu", "Mrigashira", "Dhanishta"]
     return [{
-        "Planet": random.choice(planets),
-        "Time": date.strftime("%H:%M:%S"),
+        "Planet": planet,
+        "Time": str(datetime.strptime(f"{date.strftime('%Y-%m-%d')} {random.randint(0, 23):02d}:{random.randint(0, 59):02d}", "%Y-%m-%d %H:%M")).split()[1][:5],
         "Position": f"{random.randint(0, 29)}°{random.randint(0, 59)}'{random.randint(0, 59)}\"",
         "Motion": random.choice(["D", "R"]),
         "Nakshatra": random.choice(nakshatras)
-    } for _ in range(6)]
+    } for planet in planets]  # One transit per planet with random time
 
 def calculate_aspect(position):
     """Calculate aspect based on zodiac position with robust parsing"""
@@ -234,7 +238,7 @@ def generate_signals(symbol, transits):
         effect, impact = determine_effect(planet, aspect, config.get("rulers", {}), transit.get("Motion", "D"), symbol, transit.get("Nakshatra", "Unknown"))
         
         signals.append({
-            "Time": transit.get("Time", "00:00")[:5],
+            "Time": transit.get("Time", "00:00"),
             "Planet": f"{planet} ({VEDIC_PLANETS.get(planet, planet)})",
             "Aspect": aspect,
             "Nakshatra": transit.get("Nakshatra", "Unknown"),
@@ -319,7 +323,6 @@ def main():
                         "Interpretation": "Interpretation"
                     },
                     use_container_width=True,
-                    height=min(800, 45 * len(df)),
                     hide_index=True
                 )
             except Exception as e:
