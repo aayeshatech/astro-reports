@@ -59,11 +59,10 @@ def get_planetary_positions(date_time):
             lon_sid = (lon_sid + 180) % 360
         sign, house = get_zodiac_house(lon_sid)
         nak, pada = get_nakshatra_pada(lon_sid % 30 + (int(lon_sid // 30) * 30))
-        # Check retrograde only for planets (not nodes)
         is_retro = "N/A"
         if planet not in ["Rahu", "Ketu"]:
             result = swe.calc_ut(jd, pid)
-            if len(result[0]) > 3:  # Ensure speed is available
+            if len(result[0]) > 3:
                 is_retro = "Yes" if result[0][3] < 0 else "No"
         positions.append({
             "Planet": planet,
@@ -72,7 +71,8 @@ def get_planetary_positions(date_time):
             "House": house,
             "Nakshatra": nak,
             "Pada": pada,
-            "Retrograde": is_retro
+            "Retrograde": is_retro,
+            "Date": date_time.strftime("%Y-%m-%d %H:%M IST")
         })
     return pd.DataFrame(positions)
 
@@ -96,6 +96,17 @@ def get_aspects(positions):
                 aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Trine", "Degree": f"{diff:.2f}°"})
     return pd.DataFrame(aspects)
 
+# Function to determine strong buy/sell signals based on aspects
+def get_trading_signal(aspects):
+    is_bullish = any(aspect["Aspect"] in ["Trine", "Sextile"] for _, aspect in aspects.iterrows())
+    is_bearish = any(aspect["Aspect"] in ["Square", "Conjunction"] for _, aspect in aspects.iterrows())
+    if is_bullish and not is_bearish:
+        return "Strong Buy", "green"
+    elif is_bearish and not is_bullish:
+        return "Strong Sell", "red"
+    else:
+        return "Hold", "black"
+
 # Streamlit app
 st.title("Astro Market Analyzer")
 
@@ -105,24 +116,36 @@ tab1, tab2 = st.tabs(["Planetary Report", "Stock Search"])
 # Planetary Report Tab
 with tab1:
     st.header("Planetary Transits Report")
-    current_month = datetime.now().month
-    next_month = current_month % 12 + 1
     year = datetime.now().year
     
     st.subheader(f"July {year} Transits")
-    july_date = datetime(year, 7, 1, 9, 0)
-    july_positions = get_planetary_positions(july_date)
-    st.dataframe(july_positions[["Planet", "Sign", "Degree", "House", "Nakshatra", "Pada", "Retrograde"]])
-    july_aspects = get_aspects(july_positions)
+    july_transits = []
+    for day in range(1, 32):  # Iterate through July days
+        try:
+            date = datetime(year, 7, day, 9, 0)  # 9:00 AM IST
+            positions = get_planetary_positions(date)
+            july_transits.append(positions)
+        except ValueError:
+            break  # Stop at end of month
+    july_df = pd.concat(july_transits, ignore_index=True)
+    st.dataframe(july_df[["Planet", "Sign", "Degree", "House", "Nakshatra", "Pada", "Retrograde", "Date"]])
+    july_aspects = pd.concat([get_aspects(df) for df in july_transits], ignore_index=True)
     if not july_aspects.empty:
         st.subheader("July Aspects")
         st.dataframe(july_aspects)
 
     st.subheader(f"August {year} Transits")
-    aug_date = datetime(year, 8, 1, 9, 0)
-    aug_positions = get_planetary_positions(aug_date)
-    st.dataframe(aug_positions[["Planet", "Sign", "Degree", "House", "Nakshatra", "Pada", "Retrograde"]])
-    aug_aspects = get_aspects(aug_positions)
+    aug_transits = []
+    for day in range(1, 32):  # Iterate through August days
+        try:
+            date = datetime(year, 8, day, 9, 0)  # 9:00 AM IST
+            positions = get_planetary_positions(date)
+            aug_transits.append(positions)
+        except ValueError:
+            break  # Stop at end of month
+    aug_df = pd.concat(aug_transits, ignore_index=True)
+    st.dataframe(aug_df[["Planet", "Sign", "Degree", "House", "Nakshatra", "Pada", "Retrograde", "Date"]])
+    aug_aspects = pd.concat([get_aspects(df) for df in aug_transits], ignore_index=True)
     if not aug_aspects.empty:
         st.subheader("August Aspects")
         st.dataframe(aug_aspects)
@@ -132,28 +155,28 @@ with tab2:
     st.header("Stock Search")
     symbol = st.text_input("Enter Stock Symbol", "NIFTY")
     start_date = st.date_input("Start Date", datetime(2025, 7, 29))
-    end_date = st.date_input("End Date", datetime(2025, 7, 30))
+    start_time = st.time_input("Start Time (IST)", datetime(2025, 7, 29, 9, 0).time())
+    end_date = st.date_input("End Date", datetime(2025, 7, 29))
+    end_time = st.time_input("End Time (IST)", datetime(2025, 7, 29, 15, 0).time())
     if st.button("Search"):
-        if start_date > end_date:
-            st.error("End date must be after start date.")
+        start_datetime = datetime.combine(start_date, start_time)
+        end_datetime = datetime.combine(end_date, end_time)
+        if start_datetime > end_datetime:
+            st.error("End datetime must be after start datetime.")
         else:
-            dates = [start_date + timedelta(days=x) for x in range((end_date - start_date).days + 1)]
             timeline = []
-            for date in dates:
-                for hour in range(9, 16):  # 9 AM to 3 PM IST market hours
-                    dt = datetime.combine(date, datetime.min.time()).replace(hour=hour, minute=0)
-                    positions = get_planetary_positions(dt)
-                    aspects = get_aspects(positions)
-                    # Simple bullish/bearish logic based on aspects
-                    is_bullish = any(aspect["Aspect"] in ["Trine", "Sextile"] for _, aspect in aspects.iterrows())
-                    is_bearish = any(aspect["Aspect"] in ["Square", "Conjunction"] for _, aspect in aspects.iterrows())
-                    action = "Buy" if is_bullish else "Sell" if is_bearish else "Hold"
-                    color = "green" if is_bullish else "red" if is_bearish else "black"
-                    timeline.append({
-                        "DateTime": dt.strftime("%Y-%m-%d %H:%M IST"),
-                        "Action": action,
-                        "Color": color
-                    })
+            current_time = start_datetime
+            while current_time <= end_datetime:
+                positions = get_planetary_positions(current_time)
+                aspects = get_aspects(positions)
+                signal, color = get_trading_signal(aspects)
+                timeline.append({
+                    "DateTime": current_time.strftime("%Y-%m-%d %H:%M IST"),
+                    "Planetary Transit": ", ".join([f"{row['Planet']} in {row['Sign']} {row['Degree']}" for _, row in positions.iterrows()]),
+                    "Signal": signal,
+                    "Color": color
+                })
+                current_time += timedelta(minutes=15)  # 15-minute intraday intervals
             timeline_df = pd.DataFrame(timeline)
             st.dataframe(timeline_df.style.apply(lambda x: ['color: {}'.format(x.Color) for _ in x], axis=1))
 
@@ -162,7 +185,7 @@ st.markdown("""
 ### Instructions
 1. Install dependencies: `pip install -r requirements.txt` and `pip install pyswisseph`.
 2. Run the app: `streamlit run script.py`.
-3. Use the 'Planetary Report' tab to view current and next month's transits.
-4. Use the 'Stock Search' tab to input a stock symbol, date range, and analyze the timeline.
+3. Use the 'Planetary Report' tab to view monthly transits with dates.
+4. Use the 'Stock Search' tab to input a stock symbol, date range with times, and analyze the intraday timeline.
 5. Ensure Swiss Ephemeris data files are installed[](https://pyswisseph.readthedocs.io/en/latest/installation.html).
 """)
