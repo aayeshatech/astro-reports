@@ -127,7 +127,10 @@ def get_aspects(positions, previous_aspects=None):
     aspects = []
     planets = positions["Planet"].tolist()
     degrees = positions["Degree"].apply(lambda x: float(x.split('°')[0]) + float(x.split('°')[1].split("'")[0])/60)
-    almanac_data = fetch_almanac_data(positions.iloc[0]["Date"])
+    # Convert string date to datetime object
+    date_str = positions.iloc[0]["Date"]
+    date_time = datetime.strptime(date_str, "%Y-%m-%d %H:%M IST")
+    almanac_data = fetch_almanac_data(date_time)
     
     if almanac_data and "aspects" in almanac_data:
         for aspect in almanac_data["aspects"]:
@@ -542,4 +545,3 @@ st.markdown("""
 4. Use the 'Stock Search' tab to input a stock symbol, date range with times, and analyze the intraday timeline with updated planetary positions and astro aspect-based signals.
 5. Ensure Swiss Ephemeris data files are installed (see https://pyswisseph.readthedocs.io/en/latest/installation.html).
 """)
-
