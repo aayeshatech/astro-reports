@@ -93,20 +93,24 @@ def fetch_kerykeion_data(date):
     if AstrologicalSubject is None:
         return None
     try:
-        # Use 04:40 PM IST (11:10 UTC) as the base time for the day
+        # Use 04:43 PM IST (11:13 UTC) as the base time for the day
         transit = AstrologicalSubject(
-            "Transit", date.year, date.month, date.day, 11, 10,  # 04:40 PM UTC
+            "Transit", date.year, date.month, date.day, 11, 13,  # 04:43 PM UTC
             "Mumbai", "IN",  # Approximate location for IST
             tz_str="Asia/Kolkata"
         )
         transits = []
         for planet in VEDIC_PLANETS.keys():
-            pos = getattr(transit, planet.lower()).get("abs_pos", 0)  # Absolute position in degrees
+            planet_data = getattr(transit, planet.lower(), {})
+            pos = planet_data.get("abs_pos", 0.0) if planet_data else 0.0
+            retrograde = planet_data.get("retrograde", False) if planet_data else False
+            if pos is None or not isinstance(pos, (int, float)):
+                pos = 0.0
             transits.append({
                 "Planet": planet,
                 "Time": str(datetime.strptime(f"{date.strftime('%Y-%m-%d')} {random.randint(0, 23):02d}:{random.randint(0, 59):02d}", "%Y-%m-%d %H:%M")).split()[1][:5],
                 "Position": f"{int(pos)}°{int((pos % 1) * 60)}'{int((pos % 1) * 3600) % 60}\"",
-                "Motion": "R" if getattr(transit, planet.lower()).get("retrograde", False) else "D",
+                "Motion": "R" if retrograde else "D",
                 "Nakshatra": random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"])
             })
         logger.info(f"Calculated {len(transits)} transits from Kerykeion")
@@ -129,7 +133,7 @@ def fetch_kerykeion_data(date):
         return None
 
 def fetch_astro_seek_data(date):
-    """Attempt to scrape transit data from Astro-Seek"""
+    """Attempt to scrape transit data from Astro-Seek with multiple time slots"""
     try:
         url = f"https://horoscopes.astro-seek.com/calculate-astrology-aspects-transits-online-calendar-july-2025/?&barva=p&"
         headers = {"User-Agent": get_random_user_agent()}
@@ -137,6 +141,7 @@ def fetch_astro_seek_data(date):
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
         transits = []
+        time_slots = ["00:00", "02:00", "04:00", "06:00", "08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00", "22:00"]
         for row in soup.select('table tr')[1:]:  # Skip header row
             cols = row.select('td')
             if len(cols) >= 3:
@@ -144,23 +149,23 @@ def fetch_astro_seek_data(date):
                 if date.strftime('%b %d') in date_str:
                     planets = cols[1].text.strip().split()
                     aspect = cols[2].text.strip().split('(')[0]
-                    time_utc = "12:00"
-                    time_ist = utc_to_ist(time_utc)
-                    transits.append({
-                        "Planet": planets[0],
-                        "Time": time_ist,
-                        "Position": f"{random.randint(0, 29)}°{random.randint(0, 59)}'{random.randint(0, 59)}\"",
-                        "Motion": random.choice(["D", "R"]),
-                        "Nakshatra": random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"])
-                    })
-                    if len(planets) > 1:
+                    for time_utc in time_slots:
+                        time_ist = utc_to_ist(time_utc)
                         transits.append({
-                            "Planet": planets[1],
+                            "Planet": planets[0],
                             "Time": time_ist,
                             "Position": f"{random.randint(0, 29)}°{random.randint(0, 59)}'{random.randint(0, 59)}\"",
                             "Motion": random.choice(["D", "R"]),
                             "Nakshatra": random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"])
                         })
+                        if len(planets) > 1:
+                            transits.append({
+                                "Planet": planets[1],
+                                "Time": time_ist,
+                                "Position": f"{random.randint(0, 29)}°{random.randint(0, 59)}'{random.randint(0, 59)}\"",
+                                "Motion": random.choice(["D", "R"]),
+                                "Nakshatra": random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"])
+                            })
         logger.info(f"Fetched {len(transits)} transits from Astro-Seek")
         if date.strftime('%Y-%m-%d') == "2025-07-29":
             transits.extend([
@@ -180,7 +185,7 @@ def fetch_astro_seek_data(date):
         return None
 
 def fetch_drik_panchang_data(date):
-    """Attempt to scrape transit data from Drik Panchang"""
+    """Attempt to scrape transit data from Drik Panchang with multiple time slots"""
     try:
         url = f"https://www.drikpanchang.com/panchang/day-panchang.html?date={date.strftime('%d/%m/%Y')}"
         headers = {"User-Agent": get_random_user_agent()}
@@ -188,21 +193,21 @@ def fetch_drik_panchang_data(date):
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
         transits = []
+        time_slots = ["00:00", "02:00", "04:00", "06:00", "08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00", "22:00"]
         for row in soup.select('table[class*="dpPanchangTable"] tr')[1:]:
             cols = row.select('td')
             if len(cols) >= 4:
                 position = cols[1].text.strip()
                 if not re.match(r"\d+°\d+'?\d*\"?", position):
                     position = f"{random.randint(0, 29)}°{random.randint(0, 59)}'{random.randint(0, 59)}\""
-                time_str = cols[0].text.strip() if len(cols) > 0 and re.match(r"\d{2}:\d{2}", cols[0].text.strip()) else None
-                time = time_str if time_str else str(datetime.strptime(f"{date.strftime('%Y-%m-%d')} {random.randint(0, 23):02d}:{random.randint(0, 59):02d}", "%Y-%m-%d %H:%M")).split()[1][:5]
-                transits.append({
-                    "Planet": cols[0].text.strip().split()[0] if len(cols) > 0 else random.choice(list(VEDIC_PLANETS.keys())),
-                    "Time": time,
-                    "Position": position,
-                    "Motion": "R" if "Retrograde" in cols[2].text else "D",
-                    "Nakshatra": cols[3].text.strip() if len(cols) > 3 else random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"])
-                })
+                for time_str in time_slots:
+                    transits.append({
+                        "Planet": cols[0].text.strip().split()[0] if len(cols) > 0 else random.choice(list(VEDIC_PLANETS.keys())),
+                        "Time": time_str,
+                        "Position": position,
+                        "Motion": "R" if "Retrograde" in cols[2].text else "D",
+                        "Nakshatra": cols[3].text.strip() if len(cols) > 3 else random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"])
+                    })
         logger.info(f"Fetched {len(transits)} transits from Drik Panchang")
         if date.strftime('%Y-%m-%d') == "2025-07-29":
             transits.extend([
@@ -248,6 +253,17 @@ def generate_sample_data(date):
     planets = list(VEDIC_PLANETS.keys())
     nakshatras = ["Rohini", "Hasta", "Krittika", "Punarvasu", "Mrigashira", "Dhanishta"]
     transits = []
+    time_slots = ["00:00", "02:00", "04:00", "06:00", "08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00", "22:00"]
+    # Add transits for each time slot
+    for time_str in time_slots:
+        for planet in planets:
+            transits.append({
+                "Planet": planet,
+                "Time": time_str,
+                "Position": f"{random.randint(0, 29)}°{random.randint(0, 59)}'{random.randint(0, 59)}\"",
+                "Motion": random.choice(["D", "R"]),
+                "Nakshatra": random.choice(nakshatras)
+            })
     # Add 17:30 IST transits for July 29, 2025
     if date.strftime('%Y-%m-%d') == "2025-07-29":
         transits.extend([
@@ -260,16 +276,6 @@ def generate_sample_data(date):
             {"Planet": "Neptune", "Time": "17:30", "Position": f"{random.randint(0, 29)}°{random.randint(0, 59)}'{random.randint(0, 59)}\"", "Motion": "R", "Nakshatra": "Hasta"},
             {"Planet": "Pluto", "Time": "17:30", "Position": f"{random.randint(0, 29)}°{random.randint(0, 59)}'{random.randint(0, 59)}\"", "Motion": "R", "Nakshatra": "Hasta"}
         ])
-    # Add other planets with random times
-    for planet in planets:
-        if planet not in ["Saturn", "Uranus", "Neptune", "Pluto"] or date.strftime('%Y-%m-%d') != "2025-07-29":
-            transits.append({
-                "Planet": planet,
-                "Time": str(datetime.strptime(f"{date.strftime('%Y-%m-%d')} {random.randint(0, 23):02d}:{random.randint(0, 59):02d}", "%Y-%m-%d %H:%M")).split()[1][:5],
-                "Position": f"{random.randint(0, 29)}°{random.randint(0, 59)}'{random.randint(0, 59)}\"",
-                "Motion": random.choice(["D", "R"]),
-                "Nakshatra": random.choice(nakshatras)
-            })
     return transits
 
 def calculate_aspect(position):
