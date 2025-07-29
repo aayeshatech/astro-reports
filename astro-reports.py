@@ -1,3 +1,4 @@
+```python
 import streamlit as st
 import swisseph as swe
 import pandas as pd
@@ -140,50 +141,60 @@ def get_aspects(positions, previous_aspects=None):
 
 # Improved function to determine trading signals with swing logic
 def get_trading_signal(aspects, new_aspects, dissolved_aspects, previous_signal="Neutral"):
-    if aspects.empty:
+    try:
+        if aspects.empty:
+            return "Neutral", "gray", 0, 0
+        
+        bullish_score = 0
+        bearish_score = 0
+        
+        for _, aspect in aspects.iterrows():
+            weight = aspect["Weight"]
+            if aspect["Aspect"] in ["Trine", "Sextile"]:
+                bullish_score += weight
+            elif aspect["Aspect"] in ["Square", "Opposition"]:
+                bearish_score += weight
+            elif aspect["Aspect"] == "Conjunction":
+                if aspect["Planet1"] in ["Jupiter", "Venus"] or aspect["Planet2"] in ["Jupiter", "Venus"]:
+                    bullish_score += weight * 0.8
+                elif aspect["Planet1"] in ["Mars", "Saturn", "Rahu", "Ketu"] or aspect["Planet2"] in ["Mars", "Saturn", "Rahu", "Ketu"]:
+                    bearish_score += weight * 0.8
+        
+        # Adjust scores based on new and dissolved aspects for swing signals
+        for aspect in new_aspects:
+            weight = aspect.get("Weight", 0)
+            if aspect["Aspect"] in ["Trine", "Sextile"]:
+                bullish_score += weight * 1.2  # Boost for new bullish aspect
+            elif aspect["Aspect"] in ["Square", "Opposition"]:
+                bearish_score += weight * 1.2  # Boost for new bearish aspect
+        
+        for aspect in dissolved_aspects:
+            weight = aspect.get("Weight", 0)
+            if aspect["Aspect"] in ["Trine", "Sextile"]:
+                bullish_score -= weight * 0.5  # Reduce for dissolved bullish aspect
+            elif aspect["Aspect"] in ["Square", "Opposition"]:
+                bearish_score -= weight * 0.5  # Reduce for dissolved bearish aspect
+        
+        # Determine swing signal based on score changes and previous signal
+        signal = "Neutral"
+        color = "gray"
+        if bullish_score > bearish_score * 1.5 or (new_aspects and any(a["Aspect"] in ["Trine", "Sextile"] for a in new_aspects)):
+            signal = "Swing Buy"
+            color = "lightgreen"
+        elif bearish_score > bullish_score * 1.5 or (new_aspects and any(a["Aspect"] in ["Square", "Opposition"] for a in new_aspects)):
+            signal = "Swing Sell"
+            color = "lightcoral"
+        elif bullish_score > bearish_score:
+            signal = "Buy"
+            color = "lightgreen"
+        elif bearish_score > bullish_score:
+            signal = "Sell"
+            color = "lightcoral"
+        
+        return signal, color, bullish_score, bearish_score
+    except Exception as e:
+        st.error(f"Error in get_trading_signal: {str(e)}")
         return "Neutral", "gray", 0, 0
-    
-    bullish_score = 0
-    bearish_score = 0
-    
-    for _, aspect in aspects.iterrows():
-        weight = aspect["Weight"]
-        if aspect["Aspect"] in ["Trine", "Sextile"]:
-            bullish_score += weight
-        elif aspect["Aspect"] in ["Square", "Opposition"]:
-            bearish_score += weight
-        elif aspect["Aspect"] == "Conjunction":
-            if aspect["Planet1"] in ["Jupiter", "Venus"] or aspect["Planet2"] in ["Jupiter", "Venus"]:
-                bullish_score += weight * 0.8
-            elif aspect["Planet1"] in ["Mars", "Saturn", "Rahu", "Ketu"] or aspect["Planet2"] in ["Mars", "Saturn", "Rahu", "Ketu"]:
-                bearish_score += weight * 0.8
-    
-    # Adjust scores based on new and dissolved aspects for swing signals
-    for aspect in new_aspects:
-        weight = aspect["Weight"]
-        if aspect["Aspect"] in ["Trine", "Sextile"]:
-            bullish_score += weight * 1.2  # Boost for new bullish aspect
-        elif aspect["Aspect"] in ["Square", "Opposition"]:
-            bearish_score += weight * 1.2  # Boost for new bearish aspect
-    
-    for aspect in dissolved_aspects:
-        weight = aspect["Weight"]
-        if aspect["Aspect"] in ["Trine", "Sextile"]:
-            bullish_score -= weight * 0.5  # Reduce for dissolved bullish aspect
-        elif aspect["Aspect"] in ["Square", "Opposition"]:
-            bearish_score -= weight * 0.5  # Reduce for dissolved bearish aspect
-    
-    # Determine swing signal based on score changes and previous signal
-    if bullish_score > bearish_score * 1.5 or (new_aspects and any(a["Aspect"] in ["Trine", "Sextile"] for a in new_aspects)):
-        return "Swing Buy", "lightgreen", bullish_score, bearish_score
-    elif bearish_score > bullish_score * 1.5 or (new_aspects and any(a["Aspect"] in ["Square", "Opposition"] for a in new_aspects)):
-        return "Swing Sell", "lightcoral", bullish_score, bearish_score
-    elif bullish_score > bearish_score:
-        return "Buy", "lightgreen", bullish_score, bearish_score
-    elif bearish_score > bullish_score:
-        return "Sell", "lightcoral", bullish_score, bearish_score
-    else:
-        return "Neutral", "gray", bullish_score, bearish_score
 
 # Function to get significant transits
 def get_significant_transits(current_positions, previous_positions=None, reported_transits=None):
@@ -402,7 +413,7 @@ with tab2:
             while current_time <= end_datetime:
                 positions = get_planetary_positions(current_time)
                 current_aspects, new_aspects, dissolved_aspects = get_aspects(positions, previous_aspects)
-                signal, color, bull_score, bear_score = get_trading_signal(current_aspects, new_aspects, dissolved_aspects, previous_signal)
+                signal, color, bull_score, bearish_score = get_trading_signal(current_aspects, new_aspects, dissolved_aspects, previous_signal)
                 
                 significant_transits, _, reported_transits = get_significant_transits(positions, previous_positions, reported_transits)
                 
@@ -488,3 +499,4 @@ st.markdown("""
 4. Use the 'Stock Search' tab to input a stock symbol, date range with times, and analyze the intraday timeline with filtered aspects and swing signals.
 5. Ensure Swiss Ephemeris data files are installed (see https://pyswisseph.readthedocs.io/en/latest/installation.html).
 """)
+```
