@@ -65,7 +65,7 @@ def get_planetary_positions(date_time):
         if planet == "Ketu":
             lon_sid = (lon_sid + 180) % 360
         sign, house = get_zodiac_house(lon_sid)
-        nak, pada = get_nakshatra_pada(lon_sid)  # Fixed this line
+        nak, pada = get_nakshatra_pada(lon_sid)
         is_retro = "N/A"
         if planet not in ["Rahu", "Ketu"]:
             result = swe.calc_ut(jd, pid)
@@ -131,7 +131,7 @@ def get_aspects(positions):
 # Improved function to determine trading signals
 def get_trading_signal(aspects):
     if aspects.empty:
-        return "Neutral", "gray"
+        return "Neutral", "gray", 0, 0
     
     bullish_score = 0
     bearish_score = 0
@@ -151,17 +151,54 @@ def get_trading_signal(aspects):
     
     # Determine signal based on scores
     if bullish_score > bearish_score * 1.5:
-        return "Strong Buy", "green"
+        return "Strong Buy", "green", bullish_score, bearish_score
     elif bearish_score > bullish_score * 1.5:
-        return "Strong Sell", "red"
+        return "Strong Sell", "red", bullish_score, bearish_score
     elif bullish_score > bearish_score:
-        return "Buy", "lightgreen"
+        return "Buy", "lightgreen", bullish_score, bearish_score
     elif bearish_score > bullish_score:
-        return "Sell", "lightcoral"
+        return "Sell", "lightcoral", bullish_score, bearish_score
     else:
-        return "Neutral", "gray"
+        return "Neutral", "gray", bullish_score, bearish_score
 
-# Rest of your Streamlit app remains the same
+# Function to get significant transits (changes in planetary positions)
+def get_significant_transits(current_positions, previous_positions=None):
+    if previous_positions is None:
+        # For the first timestamp, show all positions
+        return [f"{row['Planet']} in {row['Sign']} {row['Degree']}" for _, row in current_positions.iterrows()]
+    
+    significant_changes = []
+    
+    # Compare current and previous positions
+    for _, current_row in current_positions.iterrows():
+        planet = current_row["Planet"]
+        previous_row = previous_positions[previous_positions["Planet"] == planet]
+        
+        if not previous_row.empty:
+            prev_sign = previous_row.iloc[0]["Sign"]
+            prev_degree = previous_row.iloc[0]["Degree"]
+            prev_nakshatra = previous_row.iloc[0]["Nakshatra"]
+            
+            # Check for sign change
+            if current_row["Sign"] != prev_sign:
+                significant_changes.append(f"{planet} entered {current_row['Sign']}")
+            
+            # Check for nakshatra change
+            if current_row["Nakshatra"] != prev_nakshatra:
+                significant_changes.append(f"{planet} entered {current_row['Nakshatra']}")
+            
+            # Check for significant degree movement (more than 30 minutes)
+            current_deg = float(current_row["Degree"].split('°')[0]) + float(current_row["Degree"].split('°')[1].split("'")[0])/60
+            prev_deg = float(prev_degree.split('°')[0]) + float(prev_degree.split('°')[1].split("'")[0])/60
+            
+            if abs(current_deg - prev_deg) > 0.5:  # More than 30 minutes movement
+                significant_changes.append(f"{planet} moved to {current_row['Degree']}")
+        else:
+            # Planet wasn't in previous data (shouldn't happen but just in case)
+            significant_changes.append(f"{planet} in {current_row['Sign']} {current_row['Degree']}")
+    
+    return significant_changes if significant_changes else ["No significant changes"]
+
 # Streamlit app
 st.title("Astro Market Analyzer")
 
@@ -209,9 +246,9 @@ with tab2:
     st.header("Stock Search")
     symbol = st.text_input("Enter Stock Symbol", "NIFTY")
     start_date = st.date_input("Start Date", datetime(2025, 7, 29))
-    start_time = st.time_input("Start Time (IST)", datetime(2025, 7, 29, 9, 0).time())
+    start_time = st.time_input("Start Time (IST)", datetime(2025, 7, 29, 9, 15).time())  # Market open time
     end_date = st.date_input("End Date", datetime(2025, 7, 29))
-    end_time = st.time_input("End Time (IST)", datetime(2025, 7, 29, 15, 0).time())
+    end_time = st.time_input("End Time (IST)", datetime(2025, 7, 29, 15, 30).time())  # Market close time
     if st.button("Search"):
         start_datetime = datetime.combine(start_date, start_time)
         end_datetime = datetime.combine(end_date, end_time)
@@ -220,19 +257,72 @@ with tab2:
         else:
             timeline = []
             current_time = start_datetime
+            previous_positions = None
+            
             while current_time <= end_datetime:
                 positions = get_planetary_positions(current_time)
                 aspects = get_aspects(positions)
-                signal, color = get_trading_signal(aspects)
+                signal, color, bull_score, bear_score = get_trading_signal(aspects)
+                
+                # Get only significant transits (changes from previous time)
+                significant_transits = get_significant_transits(positions, previous_positions)
+                
+                # Format active aspects for display
+                active_aspects = []
+                if not aspects.empty:
+                    for _, aspect in aspects.iterrows():
+                        active_aspects.append(f"{aspect['Planet1']}-{aspect['Planet2']}: {aspect['Aspect']}")
+                
                 timeline.append({
                     "DateTime": current_time.strftime("%Y-%m-%d %H:%M IST"),
-                    "Planetary Transit": ", ".join([f"{row['Planet']} in {row['Sign']} {row['Degree']}" for _, row in positions.iterrows()]),
+                    "Significant Transits": ", ".join(significant_transits),
+                    "Active Aspects": ", ".join(active_aspects),
                     "Signal": signal,
+                    "Bullish Score": bull_score,
+                    "Bearish Score": bear_score,
                     "Color": color
                 })
+                
+                # Update previous_positions for next iteration
+                previous_positions = positions.copy()
                 current_time += timedelta(minutes=15)  # 15-minute intraday intervals
+            
             timeline_df = pd.DataFrame(timeline)
-            st.dataframe(timeline_df.style.apply(lambda x: ['color: {}'.format(x.Color) for _ in x], axis=1))
+            
+            # Style the Signal column with color
+            styled_df = timeline_df.style.apply(lambda x: ['color: {}'.format(x.Color) for _ in x], axis=1, subset=['Signal'])
+            
+            # Display the dataframe
+            st.dataframe(styled_df)
+            
+            # Add a chart showing signal strength over time
+            st.subheader("Signal Strength Over Time")
+            fig = go.Figure()
+            
+            fig.add_trace(go.Scatter(
+                x=timeline_df["DateTime"],
+                y=timeline_df["Bullish Score"],
+                mode='lines+markers',
+                name='Bullish Score',
+                line=dict(color='green')
+            ))
+            
+            fig.add_trace(go.Scatter(
+                x=timeline_df["DateTime"],
+                y=timeline_df["Bearish Score"],
+                mode='lines+markers',
+                name='Bearish Score',
+                line=dict(color='red')
+            ))
+            
+            fig.update_layout(
+                title=f'Bullish vs Bearish Score for {symbol}',
+                xaxis_title='Time',
+                yaxis_title='Score',
+                hovermode='x unified'
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
 
 # Instructions
 st.markdown("""
