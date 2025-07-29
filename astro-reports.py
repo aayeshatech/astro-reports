@@ -2,9 +2,8 @@ import streamlit as st
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta, time as datetime_time
 import re
-import time
 
 # Vedic planet names mapping
 VEDIC_PLANETS = {
@@ -66,7 +65,7 @@ def fetch_monthly_astro_events(year, month):
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
         r = requests.get(url, params=params, headers=headers, timeout=15)
-        r.raise_for_status()  # Raises an HTTPError for bad responses (4xx, 5xx)
+        r.raise_for_status()
 
         soup = BeautifulSoup(r.text, "html.parser")
         rows = soup.select("table.table-striped tbody tr")
@@ -79,7 +78,7 @@ def fetch_monthly_astro_events(year, month):
             tds = tr.find_all("td")
             if len(tds) < 3:
                 continue
-            raw_date = tds[0].text.strip()  # e.g., "Jul 4, 2025, 12:44"
+            raw_date = tds[0].text.strip()
             event_name = tds[1].text.strip()
             details = tds[2].text.strip()
             try:
@@ -102,7 +101,6 @@ def fetch_monthly_astro_events(year, month):
 
     if not events:
         st.warning("No valid astro events were extracted. Using default Nakshatra.")
-        # Fallback: Add a default event to avoid breaking Nakshatra logic
         events.append({
             "datetime": datetime(year, month, 1),
             "name": "Moon enters Unknown",
@@ -131,7 +129,7 @@ def fetch_daily_aspects(date_selected):
             if len(tds) < 6:
                 continue
 
-            raw_date_time = tds[0].text.strip()   # Format: "Jul 29, 2025, 17:30"
+            raw_date_time = tds[0].text.strip()
             try:
                 dt = datetime.strptime(raw_date_time, "%b %d, %Y, %H:%M")
             except:
@@ -248,7 +246,7 @@ def build_intraday_signals(symbol, aspects, monthly_events, user_start, user_end
     if nakshatra_events:
         nakshatra_segments.append({
             'start': nakshatra_events[-1]['dt'],
-            'end': datetime.combine(user_start.date(), time.max),
+            'end': datetime.combine(user_start.date(), datetime_time.max),
             'nakshatra': nakshatra_events[-1]['nakshatra']
         })
     else:
@@ -301,8 +299,8 @@ def build_intraday_signals(symbol, aspects, monthly_events, user_start, user_end
 def summarize_report(signals):
     bullish = sorted([f"{s['Date']} {s['Time']} ({s['Planet']})" for s in signals if 'Bullish' in s["Effect"]])
     bearish = sorted([f"{s['Date']} {s['Time']} ({s['Planet']})" for s in signals if 'Bearish' in s["Effect"]])
-    reversals = []  # Can implement logic later
-    long_short = ["Long (Morning)", "Short (Evening)"]  # Placeholder
+    reversals = []
+    long_short = ["Long (Morning)", "Short (Evening)"]
     majors = sorted(set(s["Aspect"] for s in signals))
     return {
         "Bullish": bullish or ["No strong bullish events"],
@@ -322,8 +320,9 @@ def main():
     with col2:
         selected_date = st.date_input("Select Date", value=datetime.today().date())
     with col3:
-        start_time = st.time_input("Select Start Time", value=time(0, 0))
-        end_time = st.time_input("Select End Time", value=time(23, 59))
+        # Use datetime.time explicitly to avoid conflicts
+        start_time = st.time_input("Select Start Time", value=datetime_time(0, 0))
+        end_time = st.time_input("Select End Time", value=datetime_time(23, 59))
 
     if end_time <= start_time:
         st.warning("End time must be after start time")
@@ -335,7 +334,6 @@ def main():
     if st.button("Generate Signals and Reports"):
         st.info("Fetching monthly astro events (including Nakshatras) ...")
         monthly_events = fetch_monthly_astro_events(selected_date.year, selected_date.month)
-        # No need for explicit error check here; function handles it with warnings
 
         st.info("Fetching daily planetary aspects and transits ...")
         daily_aspects = fetch_daily_aspects(selected_date)
