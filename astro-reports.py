@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime, timedelta, time, date
+from datetime import datetime, timedelta, time
 import re
 
 # Vedic planet names mapping
@@ -51,8 +51,6 @@ NAKSHATRA_BOOST = {
     "NIFTY": {"Mars": ["Mrigashira", "Dhanishta"], "boost": 1.1}
 }
 
-# --- Helper Functions ---
-
 def fetch_monthly_astro_events(year, month):
     """
     Scrapes AstroSeek's Monthly Astro Calendar for major transit events for the month.
@@ -63,11 +61,11 @@ def fetch_monthly_astro_events(year, month):
     events = []
 
     try:
-        r = requests.get(url, params=params, timeout=10)
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(url, params=params, headers=headers, timeout=10)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # Find event rows: table with class="table-striped", tbody, rows
         rows = soup.select("table.table-striped tbody tr")
         for tr in rows:
             tds = tr.find_all("td")
@@ -87,23 +85,23 @@ def fetch_monthly_astro_events(year, month):
             })
     except Exception as e:
         st.error(f"Error fetching monthly Astro events: {e}")
+        return []
 
     return events
 
 def fetch_daily_aspects(date_selected):
     """
     Scrapes AstroSeek's Astrology Aspects & Transits Online Calendar for aspects on selected date.
-    Returns list of dicts: 'datetime', 'planet1', 'aspect', 'planet2', 'orb', 'exact_time'.
+    Returns list of dicts with keys: 'datetime', 'planet1', 'aspect', 'planet2', 'orb', 'exact_time'.
     """
     url = "https://horoscopes.astro-seek.com/astrology-aspects-transits-online-calendar"
-
     aspects = []
     try:
-        r = requests.get(url, timeout=10)
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(url, headers=headers, timeout=10)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # Table rows likely: <table class="table-striped"> or inspect current class
         rows = soup.select("table.table-striped tbody tr")
 
         for tr in rows:
@@ -117,7 +115,6 @@ def fetch_daily_aspects(date_selected):
             except:
                 continue
 
-            # Filter only selected date
             if dt.date() != date_selected:
                 continue
 
@@ -138,12 +135,14 @@ def fetch_daily_aspects(date_selected):
 
     except Exception as e:
         st.error(f"Error fetching daily aspects: {e}")
+        return []
 
     return aspects
 
 def calculate_effect(planet, aspect, rulers, symbol, nakshatra):
     """
-    Determines market effect based on planet, aspect, rulers config, symbol and nakshatra
+    Determines market effect based on planet, aspect, rulers config, symbol and nakshatra.
+    Returns effect label and impact percentage string.
     """
     strength = 1.0
     nakshatra_boost = 1.0
@@ -158,7 +157,6 @@ def calculate_effect(planet, aspect, rulers, symbol, nakshatra):
         elif aspect in rulers[planet].get("weak", []):
             return "Strong Bearish", f"-{1.2 * strength / nakshatra_boost:.2f}%"
 
-    # Default
     bull_aspects = {"Conjunction", "Trine", "Sextile"}
     bear_aspects = {"Square", "Opposition"}
 
@@ -170,7 +168,9 @@ def calculate_effect(planet, aspect, rulers, symbol, nakshatra):
         return "Neutral", "0.00%"
 
 def get_trading_action(effect):
-    """Maps effect string to action label"""
+    """
+    Maps effect string to action label.
+    """
     mapping = {
         "Strong Bullish": "STRONG BUY",
         "Mild Bullish": "BUY",
@@ -181,6 +181,9 @@ def get_trading_action(effect):
     return mapping.get(effect, "HOLD")
 
 def generate_interpretation(planet, aspect, symbol, nakshatra):
+    """
+    Generates textual interpretation for the trading signal.
+    """
     vedic = VEDIC_PLANETS.get(planet, planet)
     interpretations = {
         "Conjunction": f"{vedic} directly influencing {symbol}",
@@ -195,36 +198,38 @@ def generate_interpretation(planet, aspect, symbol, nakshatra):
 def build_intraday_signals(symbol, aspects, monthly_events, user_start, user_end):
     """
     Combines Moon Nakshatra and planetary aspects into intraday signals with impact analysis.
-    Returns sorted list of signals.
+    Returns a sorted list of signal dicts.
     """
     signals = []
     rulers = SYMBOL_CONFIG[symbol]['rulers']
     planets_of_interest = set(SYMBOL_CONFIG[symbol]['planets'])
 
-    # First infer nakshatra per time segment by monthly_events nakshatra entries
-    # For demonstration, extract moon Nakshatra events only from monthly_events by looking for keywords:
+    # Extract Moon Nakshatra change events
     nakshatra_events = []
     for ev in monthly_events:
         if ev['name'].lower().startswith('moon enters'):
             m = re.search(r"moon enters\s+([a-z-]+)", ev['name'].lower())
             if m:
-                nakshatra_name = m.group(1).capitalize()
+                nakshatra_name = m.group(1).replace('-', ' ').title()
                 nakshatra_events.append({'dt': ev['datetime'], 'nakshatra': nakshatra_name})
 
-    # Sort and create segments
-    nakshatra_events = sorted(nakshatra_events, key=lambda x: x['dt'])
-
-    # Create intervals of nakshatras from events
+    # Sort and create nakshatra time intervals
+    nakshatra_events.sort(key=lambda x: x['dt'])
     nakshatra_segments = []
-    for i in range(len(nakshatra_events) -1):
-        start = nakshatra_events[i]
-        end = nakshatra_events[i+1]
-        nakshatra_segments.append({'start': start['dt'], 'end': end['dt'], 'nakshatra': start['nakshatra']})
-    # Add last segment till end of day
+    for i in range(len(nakshatra_events) - 1):
+        nakshatra_segments.append({
+            'start': nakshatra_events[i]['dt'],
+            'end': nakshatra_events[i+1]['dt'],
+            'nakshatra': nakshatra_events[i]['nakshatra']
+        })
+    # Last segment till end of day
     if nakshatra_events:
-        nakshatra_segments.append({'start': nakshatra_events[-1]['dt'], 'end': datetime.combine(user_start.date(), time.max), 'nakshatra': nakshatra_events[-1]['nakshatra']})
+        nakshatra_segments.append({
+            'start': nakshatra_events[-1]['dt'],
+            'end': datetime.combine(user_start.date(), time.max),
+            'nakshatra': nakshatra_events[-1]['nakshatra']
+        })
 
-    # For each aspect within time window and with relevant planet(s) create signals
     for asp in aspects:
         dt = asp['datetime']
         if dt < user_start or dt > user_end:
@@ -234,20 +239,16 @@ def build_intraday_signals(symbol, aspects, monthly_events, user_start, user_end
         p2 = asp['planet2']
         asp_type = asp['aspect']
 
-        # Check if any planet is in symbol planet list
         if p1 not in planets_of_interest and p2 not in planets_of_interest:
             continue
 
-        # Determine nakshatra at this aspect datetime
         nakshatra = "Unknown"
         for seg in nakshatra_segments:
             if seg['start'] <= dt < seg['end']:
                 nakshatra = seg['nakshatra']
                 break
 
-        # Choose planet for market effect: symbol planet if involved, else p1
         planet = p1 if p1 in planets_of_interest else p2
-
         effect, impact = calculate_effect(planet, asp_type, rulers, symbol, nakshatra)
         action = get_trading_action(effect)
         interp = generate_interpretation(planet, asp_type, symbol, nakshatra)
@@ -265,15 +266,13 @@ def build_intraday_signals(symbol, aspects, monthly_events, user_start, user_end
             "Interpretation": interp
         })
 
-    # Sort by datetime
     signals.sort(key=lambda x: x["DateTime"])
-
     return signals
 
 def summarize_report(signals):
     bullish = sorted([f"{s['Date']} {s['Time']} ({s['Planet']})" for s in signals if 'Bullish' in s["Effect"]])
     bearish = sorted([f"{s['Date']} {s['Time']} ({s['Planet']})" for s in signals if 'Bearish' in s["Effect"]])
-    reversals = []  # add logic if wanted
+    reversals = []  # can implement logic later
     long_short = ["Long (Morning)", "Short (Evening)"]  # Placeholder
     majors = sorted(set(s["Aspect"] for s in signals))
     return {
@@ -283,8 +282,6 @@ def summarize_report(signals):
         "Long/Short": long_short,
         "Major Aspects": majors or ["None"]
     }
-
-# ---- Streamlit UI ----
 
 def main():
     st.title("🌌 Vedic Astro Trading Signals with AstroSeek Data")
@@ -339,7 +336,7 @@ def main():
             hide_index=True
         )
 
-        # Aggregate signals for reports
+        # Summaries
         daily_signals = [s for s in signals if s["Date"] == selected_date.strftime("%Y-%m-%d")]
         start_of_week = selected_date - timedelta(days=selected_date.weekday())
         end_of_week = start_of_week + timedelta(days=6)
