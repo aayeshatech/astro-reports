@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
+import uuid
 
 # Nakshatra data
 nakshatras = [
@@ -72,7 +73,6 @@ def get_planetary_positions(date_time):
             if len(result[0]) > 3:
                 is_retro = "Yes" if result[0][3] < 0 else "No"
         
-        # Fixed degree calculation
         degree_in_sign = lon_sid % 30
         degree_int = int(degree_in_sign)
         minute_int = int((degree_in_sign - degree_int) * 60)
@@ -95,7 +95,6 @@ def get_aspects(positions):
     planets = positions["Planet"].tolist()
     degrees = positions["Degree"].apply(lambda x: float(x.split('°')[0]) + float(x.split('°')[1].split("'")[0])/60)
     
-    # Add the full longitude to each degree (sign * 30 + degree)
     full_degrees = []
     for i, planet in enumerate(planets):
         sign_index = zodiac_signs.index(positions.iloc[i]["Sign"])
@@ -108,22 +107,21 @@ def get_aspects(positions):
             deg2 = full_degrees[j]
             diff = min((deg2 - deg1) % 360, (deg1 - deg2) % 360)
             
-            # Increased tolerance and added more aspects
             weight = (planet_weights.get(p1, 1.0) + planet_weights.get(p2, 1.0)) / 2
             
-            if diff < 3:  # Conjunction with 3° tolerance
+            if diff < 3:
                 aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Conjunction", 
                                "Degree": f"{diff:.2f}°", "Weight": weight})
-            elif 57 < diff < 63:  # Sextile with 3° tolerance
+            elif 57 < diff < 63:
                 aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Sextile", 
                                "Degree": f"{diff:.2f}°", "Weight": weight})
-            elif 87 < diff < 93:  # Square with 3° tolerance
+            elif 87 < diff < 93:
                 aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Square", 
                                "Degree": f"{diff:.2f}°", "Weight": weight})
-            elif 117 < diff < 123:  # Trine with 3° tolerance
+            elif 117 < diff < 123:
                 aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Trine", 
                                "Degree": f"{diff:.2f}°", "Weight": weight})
-            elif 177 < diff < 183:  # Opposition with 3° tolerance
+            elif 177 < diff < 183:
                 aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Opposition", 
                                "Degree": f"{diff:.2f}°", "Weight": weight})
     return pd.DataFrame(aspects)
@@ -143,13 +141,11 @@ def get_trading_signal(aspects):
         elif aspect["Aspect"] in ["Square", "Opposition"]:
             bearish_score += weight
         elif aspect["Aspect"] == "Conjunction":
-            # Conjunction can be bullish or bearish depending on planets
             if aspect["Planet1"] in ["Jupiter", "Venus"] or aspect["Planet2"] in ["Jupiter", "Venus"]:
                 bullish_score += weight * 0.8
             elif aspect["Planet1"] in ["Mars", "Saturn", "Rahu", "Ketu"] or aspect["Planet2"] in ["Mars", "Saturn", "Rahu", "Ketu"]:
                 bearish_score += weight * 0.8
     
-    # Determine signal based on scores
     if bullish_score > bearish_score * 1.5:
         return "Strong Buy", "green", bullish_score, bearish_score
     elif bearish_score > bullish_score * 1.5:
@@ -161,15 +157,14 @@ def get_trading_signal(aspects):
     else:
         return "Neutral", "gray", bullish_score, bearish_score
 
-# Function to get significant transits (changes in planetary positions)
+# Function to get significant transits
 def get_significant_transits(current_positions, previous_positions=None):
     if previous_positions is None:
-        # For the first timestamp, show all positions
         return [f"{row['Planet']} in {row['Sign']} {row['Degree']}" for _, row in current_positions.iterrows()]
     
     significant_changes = []
+    nakshatra_changes = []
     
-    # Compare current and previous positions
     for _, current_row in current_positions.iterrows():
         planet = current_row["Planet"]
         previous_row = previous_positions[previous_positions["Planet"] == planet]
@@ -179,28 +174,39 @@ def get_significant_transits(current_positions, previous_positions=None):
             prev_degree = previous_row.iloc[0]["Degree"]
             prev_nakshatra = previous_row.iloc[0]["Nakshatra"]
             
-            # Check for sign change
             if current_row["Sign"] != prev_sign:
                 significant_changes.append(f"{planet} entered {current_row['Sign']}")
             
-            # Check for nakshatra change
             if current_row["Nakshatra"] != prev_nakshatra:
                 significant_changes.append(f"{planet} entered {current_row['Nakshatra']}")
+                nakshatra_changes.append(planet)
             
-            # Check for significant degree movement (more than 30 minutes)
             current_deg = float(current_row["Degree"].split('°')[0]) + float(current_row["Degree"].split('°')[1].split("'")[0])/60
             prev_deg = float(prev_degree.split('°')[0]) + float(prev_degree.split('°')[1].split("'")[0])/60
             
-            if abs(current_deg - prev_deg) > 0.5:  # More than 30 minutes movement
+            if abs(current_deg - prev_deg) > 0.5:
                 significant_changes.append(f"{planet} moved to {current_row['Degree']}")
         else:
-            # Planet wasn't in previous data (shouldn't happen but just in case)
             significant_changes.append(f"{planet} in {current_row['Sign']} {current_row['Degree']}")
     
-    return significant_changes if significant_changes else ["No significant changes"]
+    return significant_changes if significant_changes else ["No significant changes"], nakshatra_changes
 
 # Streamlit app
+st.set_page_config(layout="wide")  # Set wide layout for better visibility
 st.title("Astro Market Analyzer")
+
+# Custom CSS for table width
+st.markdown("""
+    <style>
+    .stDataFrame {
+        width: 100%;
+        max-width: 1200px;
+    }
+    .highlight-nakshatra {
+        background-color: #FFFF99 !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # Tabs
 tab1, tab2 = st.tabs(["Planetary Report", "Stock Search"])
@@ -210,46 +216,91 @@ with tab1:
     st.header("Planetary Transits Report")
     year = datetime.now().year
     
-    st.subheader(f"July {year} Transits")
+    def display_monthly_transits(month, transits, title):
+        st.subheader(title)
+        monthly_data = []
+        previous_positions = None
+        for day, positions in enumerate(transits, 1):
+            if day == 1:  # Only show first date of the month
+                for _, row in positions.iterrows():
+                    monthly_data.append({
+                        "Date": row["Date"].split(" ")[0],
+                        "Planet": row["Planet"],
+                        "Sign": row["Sign"],
+                        "Degree": row["Degree"],
+                        "House": row["House"],
+                        "Nakshatra": row["Nakshatra"],
+                        "Pada": row["Pada"],
+                        "Retrograde": row["Retrograde"]
+                    })
+            _, nakshatra_changes = get_significant_transits(positions, previous_positions)
+            if nakshatra_changes:
+                for planet in nakshatra_changes:
+                    idx = positions[positions["Planet"] == planet].index[0]
+                    monthly_data.append({
+                        "Date": positions.iloc[idx]["Date"].split(" ")[0],
+                        "Planet": positions.iloc[idx]["Planet"],
+                        "Sign": positions.iloc[idx]["Sign"],
+                        "Degree": positions.iloc[idx]["Degree"],
+                        "House": positions.iloc[idx]["House"],
+                        "Nakshatra": positions.iloc[idx]["Nakshatra"],
+                        "Pada": positions.iloc[idx]["Pada"],
+                        "Retrograde": positions.iloc[idx]["Retrograde"]
+                    })
+            previous_positions = positions.copy()
+        
+        monthly_df = pd.DataFrame(monthly_data)
+        
+        def highlight_nakshatra_changes(s):
+            if s["Date"] != f"{year}-{month:02d}-01":
+                return ['background-color: #FFFF99'] * len(s)
+            return [''] * len(s)
+        
+        if not monthly_df.empty:
+            styled_df = monthly_df.style.apply(highlight_nakshatra_changes, axis=1)
+            st.dataframe(styled_df, use_container_width=True)
+        
+        aspects = pd.concat([get_aspects(df) for df in transits], ignore_index=True)
+        if not aspects.empty:
+            st.subheader(f"{title} Aspects")
+            st.dataframe(aspects, use_container_width=True)
+
+    # July Transits
     july_transits = []
-    for day in range(1, 32):  # Iterate through July days
+    for day in range(1, 32):
         try:
-            date = datetime(year, 7, day, 9, 0)  # 9:00 AM IST
+            date = datetime(year, 7, day, 9, 0)
             positions = get_planetary_positions(date)
             july_transits.append(positions)
         except ValueError:
-            break  # Stop at end of month
-    july_df = pd.concat(july_transits, ignore_index=True)
-    st.dataframe(july_df[["Planet", "Sign", "Degree", "House", "Nakshatra", "Pada", "Retrograde", "Date"]])
-    july_aspects = pd.concat([get_aspects(df) for df in july_transits], ignore_index=True)
-    if not july_aspects.empty:
-        st.subheader("July Aspects")
-        st.dataframe(july_aspects)
-    
-    st.subheader(f"August {year} Transits")
+            break
+    display_monthly_transits(7, july_transits, f"July {year} Transits")
+
+    # August Transits
     aug_transits = []
-    for day in range(1, 32):  # Iterate through August days
+    for day in range(1, 32):
         try:
-            date = datetime(year, 8, day, 9, 0)  # 9:00 AM IST
+            date = datetime(year, 8, day, 9, 0)
             positions = get_planetary_positions(date)
             aug_transits.append(positions)
         except ValueError:
-            break  # Stop at end of month
-    aug_df = pd.concat(aug_transits, ignore_index=True)
-    st.dataframe(aug_df[["Planet", "Sign", "Degree", "House", "Nakshatra", "Pada", "Retrograde", "Date"]])
-    aug_aspects = pd.concat([get_aspects(df) for df in aug_transits], ignore_index=True)
-    if not aug_aspects.empty:
-        st.subheader("August Aspects")
-        st.dataframe(aug_aspects)
+            break
+    display_monthly_transits(8, aug_transits, f"August {year} Transits")
 
 # Stock Search Tab
 with tab2:
     st.header("Stock Search")
-    symbol = st.text_input("Enter Stock Symbol", "NIFTY")
-    start_date = st.date_input("Start Date", datetime(2025, 7, 29))
-    start_time = st.time_input("Start Time (IST)", datetime(2025, 7, 29, 9, 15).time())  # Market open time
-    end_date = st.date_input("End Date", datetime(2025, 7, 29))
-    end_time = st.time_input("End Time (IST)", datetime(2025, 7, 29, 15, 30).time())  # Market close time
+    with st.container():
+        col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
+        with col1:
+            symbol = st.text_input("Enter Stock Symbol", "NIFTY")
+        with col2:
+            start_date = st.date_input("Start Date", datetime(2025, 7, 29))
+        with col3:
+            start_time = st.time_input("Start Time (IST)", datetime(2025, 7, 29, 9, 15).time())
+        with col4:
+            end_date = st.date_input("End Date", datetime(2025, 7, 29))
+            end_time = st.time_input("End Time (IST)", datetime(2025, 7, 29, 15, 30).time())
     
     if st.button("Search"):
         start_datetime = datetime.combine(start_date, start_time)
@@ -258,22 +309,25 @@ with tab2:
             st.error("End datetime must be after start datetime.")
         else:
             timeline = []
-            current_time = start_datetime
             previous_positions = None
+            seen_aspects = set()
             
+            current_time = start_datetime
             while current_time <= end_datetime:
                 positions = get_planetary_positions(current_time)
                 aspects = get_aspects(positions)
                 signal, color, bull_score, bear_score = get_trading_signal(aspects)
                 
-                # Get only significant transits (changes from previous time)
-                significant_transits = get_significant_transits(positions, previous_positions)
+                significant_transits, _ = get_significant_transits(positions, previous_positions)
                 
-                # Format active aspects for display
                 active_aspects = []
-                if not aspects.empty:
-                    for _, aspect in aspects.iterrows():
-                        active_aspects.append(f"{aspect['Planet1']}-{aspect['Planet2']}: {aspect['Aspect']}")
+                unique_aspects = set()
+                for _, aspect in aspects.iterrows():
+                    aspect_key = f"{aspect['Planet1']}-{aspect['Planet2']}-{aspect['Aspect']}"
+                    if aspect_key not in seen_aspects:
+                        seen_aspects.add(aspect_key)
+                        unique_aspects.add(aspect_key)
+                        active_aspects.append(f"{aspect['Planet1']}-{aspect['Planet2']}: {aspect['Aspect']} ({aspect['Degree']})")
                 
                 timeline.append({
                     "DateTime": current_time.strftime("%Y-%m-%d %H:%M IST"),
@@ -285,16 +339,13 @@ with tab2:
                     "Color": color
                 })
                 
-                # Update previous_positions for next iteration
                 previous_positions = positions.copy()
-                current_time += timedelta(minutes=15)  # 15-minute intraday intervals
+                current_time += timedelta(minutes=15)
             
             timeline_df = pd.DataFrame(timeline)
             
-            # Create a copy of the DataFrame for display
             display_df = timeline_df.drop(columns=['Color'])
             
-            # Define a function to map signal values to colors
             def color_signal(val):
                 if val == "Strong Buy":
                     return 'color: green'
@@ -307,13 +358,9 @@ with tab2:
                 else:
                     return 'color: gray'
             
-            # Apply the styling
             styled_df = display_df.style.applymap(color_signal, subset=['Signal'])
+            st.dataframe(styled_df, use_container_width=True)
             
-            # Display the dataframe
-            st.dataframe(styled_df)
-            
-            # Add a chart showing signal strength over time
             st.subheader("Signal Strength Over Time")
             fig = go.Figure()
             
@@ -337,17 +384,12 @@ with tab2:
                 title=f'Bullish vs Bearish Score for {symbol}',
                 xaxis_title='Time',
                 yaxis_title='Score',
-                hovermode='x unified'
+                hovermode='x unified',
+                width=1200
             )
             
             st.plotly_chart(fig, use_container_width=True)
 
 # Instructions
-st.markdown("""
-### Instructions
-1. Install dependencies: `pip install -r requirements.txt` and `pip install pyswisseph`.
-2. Run the app: `streamlit run script.py`.
-3. Use the 'Planetary Report' tab to view monthly transits with dates.
-4. Use the 'Stock Search' tab to input a stock symbol, date range with times, and analyze the intraday timeline.
-5. Ensure Swiss Ephemeris data files are installed[](https://pyswisseph.readthedocs.io/en/latest/installation.html).
+
 """)
