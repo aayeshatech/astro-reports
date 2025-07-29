@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, date
 
-# Configs
+# --- Config ---
 
 VEDIC_PLANETS = {
     "Sun": "Surya", "Moon": "Chandra", "Mercury": "Budha",
@@ -47,19 +47,43 @@ NAKSHATRA_BOOST = {
     "NIFTY": {"Mars": ["Mrigashira", "Dhanishta"], "boost": 1.1}
 }
 
-# Simple fallback Moon Nakshatra segments generator (replace with real scraped data source)
-def fetch_moon_nakshatra_segments(selected_date):
-    # Example fixed segments for demonstration
-    d = datetime.combine(selected_date, time(0,0))
-    segments = [
-        {"start": d, "end": d+timedelta(hours=10), "nakshatra": "Uttara Phalguni"},
-        {"start": d+timedelta(hours=10), "end": d+timedelta(hours=19, minutes=27), "nakshatra": "Hasta"},
-        {"start": d+timedelta(hours=19, minutes=27), "end": d+timedelta(hours=23, minutes=59), "nakshatra": "Chitra"}
+# --- Fallback data generator with date dependency for demo ---
+
+def fetch_moon_nakshatra_segments(selected_date: date):
+    """
+    Simulate Nakshatra timing segments; this is a placeholder.
+    You should replace it with real dynamic fetching/parsing per date.
+    """
+    base = datetime.combine(selected_date, time(0, 0))
+    
+    # Make date-dependent variables for demo variation
+    seed = selected_date.day % 5
+    
+    # Sample Nakshatra lists to rotate through by day mod
+    nakshatra_cycles = [
+        [("Uttara Phalguni", 10), ("Hasta", 9), ("Chitra", 5)],   # Sum to 24 hours (10+9+5)
+        [("Chitra", 8), ("Uttara Phalguni", 8), ("Hasta", 8)],
+        [("Hasta", 12), ("Chitra", 6), ("Uttara Phalguni", 6)],
+        [("Uttara Phalguni", 9), ("Hasta", 10), ("Chitra", 5)],
+        [("Chitra", 7), ("Hasta", 11), ("Uttara Phalguni", 6)]
     ]
+    
+    cycle = nakshatra_cycles[seed]
+    segments = []
+    current = base
+    for nakshatra_name, hours in cycle:
+        end = current + timedelta(hours=hours)
+        segments.append({"start": current, "end": end, "nakshatra": nakshatra_name})
+        current = end
+        if current.day != selected_date.day:
+            # Do not cross to next day
+            break
     return segments
 
+# --- Aspect & effect calculations ---
+
 def calculate_aspect_mock(planet, nakshatra, symbol):
-    # Basic mock logic: cyclic aspects by hash mod 3
+    # Simple cyclic aspects (demo)
     code = abs(hash((planet, nakshatra, symbol))) % 3
     return ["Trine", "Square", "Conjunction"][code]
 
@@ -101,12 +125,13 @@ def generate_interpretation(planet, aspect, symbol, nakshatra):
     }.get(aspect, f"{vedic} affecting {symbol} market")
     return f"{base} (Nakshatra: {nakshatra})"
 
+# --- Generate intraday signals ---
+
 def generate_intraday_signals(symbol, moon_segments, start_dt, end_dt):
     config = SYMBOL_CONFIG[symbol]
     planet = config["planets"][0]
     signals = []
     for seg in moon_segments:
-        # Skip segments outside user time range
         seg_start = max(seg["start"], start_dt)
         seg_end = min(seg["end"], end_dt)
         if seg_end < start_dt or seg_start > end_dt:
@@ -116,6 +141,7 @@ def generate_intraday_signals(symbol, moon_segments, start_dt, end_dt):
         if effect not in {"Strong Bullish", "Strong Bearish"}:
             continue
         signals.append({
+            "Date": seg_start.date().strftime("%Y-%m-%d"),
             "Time Window": f"{seg_start.strftime('%H:%M')} — {seg_end.strftime('%H:%M')}",
             "Planet": f"{planet} ({VEDIC_PLANETS.get(planet, '')})",
             "Aspect": aspect,
@@ -127,9 +153,41 @@ def generate_intraday_signals(symbol, moon_segments, start_dt, end_dt):
         })
     return signals
 
+# --- Generate dynamic daily, weekly, monthly reports ---
+
+def filter_signals_for_day(signals, day):
+    return [s for s in signals if s["Date"] == day.strftime("%Y-%m-%d")]
+
+def filter_signals_for_week(signals, day):
+    # Week: Monday to Sunday of the week containing day
+    start_week = day - timedelta(days=day.weekday())
+    end_week = start_week + timedelta(days=6)
+    return [s for s in signals if start_week <= datetime.strptime(s["Date"], "%Y-%m-%d").date() <= end_week]
+
+def filter_signals_for_month(signals, day):
+    return [s for s in signals if datetime.strptime(s["Date"], "%Y-%m-%d").date().month == day.month and datetime.strptime(s["Date"], "%Y-%m-%d").date().year == day.year]
+
+def summarize_report(signals):
+    """Build simple report categories from signals"""
+    bullish = [f"{s['Time Window']} ({s['Planet']})" for s in signals if s["Effect"] == "Strong Bullish"]
+    bearish = [f"{s['Time Window']} ({s['Planet']})" for s in signals if s["Effect"] == "Strong Bearish"]
+    reversals = []  # Add your reversal logic here if any
+    long_short = ["Long (Morning)", "Short (Evening)"]  # Example placeholders
+    major_aspects = list({s["Aspect"] for s in signals})  # Unique aspects as major aspects
+
+    return {
+        "Bullish": bullish if bullish else ["No strong bullish periods"],
+        "Bearish": bearish if bearish else ["No strong bearish periods"],
+        "Reversals": reversals if reversals else ["No clear reversals"],
+        "Long/Short": long_short,
+        "Major Aspects": major_aspects if major_aspects else ["No significant aspects"]
+    }
+
+# --- Main App ---
+
 def main():
     st.title("🌌 Vedic Astro Trading Signals")
-    st.markdown("### Select Symbol, Date and Intraday Time Range")
+    st.markdown("### Select Symbol, Date, and Intraday Time Range")
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -137,8 +195,8 @@ def main():
     with col2:
         selected_date = st.date_input("Select Date", value=datetime.today())
     with col3:
-        start_time = st.time_input("Start Time", value=time(9, 0))
-        end_time = st.time_input("End Time", value=time(17, 0))
+        start_time = st.time_input("Select Start Time", value=time(0, 0))
+        end_time = st.time_input("Select End Time", value=time(23, 59))
 
     start_dt = datetime.combine(selected_date, start_time)
     end_dt = datetime.combine(selected_date, end_time)
@@ -146,31 +204,89 @@ def main():
         st.warning("End time must be later than start time.")
         return
 
-    if st.button("Generate Intraday Signals"):
-        # Fetch Moon Nakshatra segments - replace with your actual data fetcher
+    if st.button("Generate Intraday Signals and Reports"):
+        # Fetch Nakshatra segments (replace with real data fetch)
         moon_segments = fetch_moon_nakshatra_segments(selected_date)
         if not moon_segments:
             st.warning("No Moon Nakshatra transit data found for selected date.")
             return
-        signals = generate_intraday_signals(symbol, moon_segments, start_dt, end_dt)
-        if signals:
-            df = pd.DataFrame(signals)
-            def color_effect(val):
-                return f"background-color: {'#27ae60' if val == 'Strong Bullish' else '#e74c3c'}; color: white"
-            def color_action(val):
-                return f"background-color: {'#16a085' if val.startswith('STRONG BUY') else '#c0392b'}; color: white; font-weight: bold"
-            styled = df.style.applymap(color_effect, subset=['Effect']).applymap(color_action, subset=['Action']).set_properties(**{'text-align': 'left'})
-            st.dataframe(styled, use_container_width=True, hide_index=True)
+        
+        # Generate intraday signals for selected date/time range
+        intraday_signals = generate_intraday_signals(symbol, moon_segments, start_dt, end_dt)
 
-            tabs = st.tabs(["Daily", "Weekly", "Monthly"])
-            with tabs[0]:
-                st.write("**Daily Analysis Placeholder**")
-            with tabs[1]:
-                st.write("**Weekly Analysis Placeholder**")
-            with tabs[2]:
-                st.write("**Monthly Analysis Placeholder**")
-        else:
+        if not intraday_signals:
             st.warning("No strong bullish/bearish planetary events found for selected symbol and time range.")
+            return
+
+        # Display intraday signals dataframe
+        st.subheader(f"Intraday Signals for {symbol} on {selected_date.isoformat()}")
+        df_intraday = pd.DataFrame(intraday_signals)
+        def color_effect(val):
+            return f"background-color: {'#27ae60' if val=='Strong Bullish' else '#e74c3c'}; color: white"
+        def color_action(val):
+            return f"background-color: {'#16a085' if val.startswith('STRONG BUY') else '#c0392b'}; color: white; font-weight: bold"
+        styled = df_intraday.style.applymap(color_effect, subset=['Effect']).applymap(color_action, subset=['Action']).set_properties(**{'text-align': 'left'})
+        st.dataframe(styled, use_container_width=True, hide_index=True)
+
+        # Aggregate signals for full day, week, month reports
+        # NOTE: For demo, generate intraday signals for full 24h as basis for aggregates
+        full_day_start = datetime.combine(selected_date, time.min)
+        full_day_end = datetime.combine(selected_date, time.max)
+        full_day_signals = generate_intraday_signals(symbol, moon_segments, full_day_start, full_day_end)
+        week_signals = generate_intraday_signals(symbol, moon_segments, full_day_start - timedelta(days=selected_date.weekday()), full_day_end + timedelta(days=6-selected_date.weekday()))
+        month_signals = generate_intraday_signals(symbol, moon_segments, 
+            datetime(selected_date.year, selected_date.month, 1, 0, 0), 
+            datetime(selected_date.year, selected_date.month, 28, 23, 59))  # Approx month end, improve if desired
+
+        # Generate summarized reports
+        daily_report = summarize_report(filter_signals_for_day(full_day_signals, selected_date))
+        weekly_report = summarize_report(filter_signals_for_week(full_day_signals, selected_date))
+        monthly_report = summarize_report(filter_signals_for_month(full_day_signals, selected_date))
+
+        # Show reports in tabs
+        st.subheader("📈 Extended Market Analysis Reports")
+        tabs = st.tabs(["Daily", "Weekly", "Monthly"])
+
+        with tabs[0]:  # Daily
+            st.write("### Bullish Periods:")
+            st.write(", ".join(daily_report["Bullish"]))
+            st.write("### Bearish Periods:")
+            st.write(", ".join(daily_report["Bearish"]))
+            st.write("### Reversal Times:")
+            st.write(", ".join(daily_report["Reversals"]))
+            st.write("### Trading Strategy:")
+            st.write(", ".join(daily_report["Long/Short"]))
+            st.write("### Major Aspects:")
+            for aspect in daily_report["Major Aspects"]:
+                st.write(f"• {aspect}")
+
+        with tabs[1]:  # Weekly
+            st.write("### Bullish Periods:")
+            st.write(", ".join(weekly_report["Bullish"]))
+            st.write("### Bearish Periods:")
+            st.write(", ".join(weekly_report["Bearish"]))
+            st.write("### Reversal Days:")
+            st.write(", ".join(weekly_report["Reversals"]))
+            st.write("### Trading Strategy:")
+            st.write(", ".join(weekly_report["Long/Short"]))
+            st.write("### Major Aspects:")
+            for aspect in weekly_report["Major Aspects"]:
+                st.write(f"• {aspect}")
+
+        with tabs[2]:  # Monthly
+            st.write("### Bullish Periods:")
+            st.write(", ".join(monthly_report["Bullish"]))
+            st.write("### Bearish Periods:")
+            st.write(", ".join(monthly_report["Bearish"]))
+            st.write("### Reversal Days:")
+            st.write(", ".join(monthly_report["Reversals"]))
+            st.write("### Trading Strategy:")
+            st.write(", ".join(monthly_report["Long/Short"]))
+            st.write("### Major Aspects:")
+            for aspect in monthly_report["Major Aspects"]:
+                st.write(f"• {aspect}")
+
+        st.success("Analysis report generated. Replace fallback data with real transit data for full functionality.")
 
 if __name__ == "__main__":
     main()
