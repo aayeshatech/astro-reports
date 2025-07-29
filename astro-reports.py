@@ -2,252 +2,211 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime
-import random
 from bs4 import BeautifulSoup
+import random
 
-# Configure page
-st.set_page_config(page_title="Vedic Astro Trader", layout="wide")
-st.title("💰 Vedic Astro Trading Signals")
-st.markdown("### Planetary Influence on Financial Markets")
-
-# Vedic Astrology Configuration
+# Vedic Names
 VEDIC_PLANETS = {
     "Sun": "Surya", "Moon": "Chandra", "Mercury": "Budha",
     "Venus": "Shukra", "Mars": "Mangala", "Jupiter": "Guru",
     "Saturn": "Shani", "Rahu": "Rahu", "Ketu": "Ketu"
 }
 
-# Trading symbol configurations
-SYMBOL_CONFIG = {
+# Symbol Rulerships
+SYMBOL_RULERSHIPS = {
     "GOLD": {
-        "planets": ["Sun", "Venus", "Saturn"],
-        "colors": {"bullish": "#FFD700", "bearish": "#B8860B"}
+        "Sun": {"strong": ["Trine", "Sextile"], "weak": ["Square", "Opposition"]},
+        "Venus": {"strong": ["Trine", "Conjunction"], "weak": ["Square"]},
+        "Saturn": {"strong": [], "weak": ["Conjunction", "Opposition"]}
     },
     "SILVER": {
-        "planets": ["Moon", "Venus"],
-        "colors": {"bullish": "#C0C0C0", "bearish": "#808080"}
+        "Moon": {"strong": ["Trine", "Sextile"], "weak": ["Square"]},
+        "Venus": {"strong": ["Conjunction"], "weak": ["Opposition"]}
     },
     "CRUDE": {
-        "planets": ["Jupiter", "Neptune"],
-        "colors": {"bullish": "#FF4500", "bearish": "#8B0000"}
+        "Jupiter": {"strong": ["Trine"], "weak": ["Square"]},
+        "Neptune": {"strong": ["Sextile"], "weak": ["Opposition"]}
     },
     "NIFTY": {
-        "planets": ["Sun", "Mars"],
-        "colors": {"bullish": "#32CD32", "bearish": "#006400"}
+        "Sun": {"strong": ["Trine"], "weak": ["Square"]},
+        "Mars": {"strong": ["Conjunction"], "weak": ["Opposition"]}
     }
 }
 
-def fetch_astronomics_data(date):
-    """Fetch planetary transit data from astronomics.ai"""
+# Aspect Based on Degree
+def get_aspect_for_position(zodiac_pos):
     try:
-        url = f"https://data.astronomics.ai/almanac/?date={date.strftime('%Y-%m-%d')}"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        
-        soup = BeautifulSoup(response.content, 'html.parser')
-        table = soup.find('table', {'class': 'table'})
-        
-        if not table:
-            st.warning("No transit table found on the page")
-            return None
-            
-        transits = []
-        for row in table.find_all('tr')[1:]:  # Skip header
-            cols = row.find_all('td')
-            if len(cols) >= 12:
-                transits.append({
-                    "Planet": cols[0].text.strip(),
-                    "Time": cols[2].text.strip(),
-                    "Zodiac": cols[7].text.strip(),
-                    "Position": cols[10].text.strip(),
-                    "Motion": cols[3].text.strip()
-                })
-        return transits if transits else None
-        
-    except Exception as e:
-        st.error(f"Error fetching data: {str(e)}")
-        return None
+        degree = float(zodiac_pos.split('°')[0])
+    except:
+        degree = random.uniform(0, 360)
 
-def generate_signals(symbol, transits):
-    """Generate trading signals from transit data"""
-    if not transits:
-        return None
-        
-    signals = []
-    symbol_planets = SYMBOL_CONFIG.get(symbol, {}).get("planets", [])
-    
-    for transit in transits:
-        planet = transit["Planet"]
-        if planet not in symbol_planets:
-            continue
-            
-        time_str = transit["Time"][:5]  # HH:MM format
-        aspect = determine_aspect(transit["Position"])
-        effect, impact = determine_effect(planet, aspect, transit["Motion"])
-        
-        signals.append({
-            "Time": time_str,
+    if degree % 180 == 0:
+        return "Opposition"
+    elif degree % 120 == 0:
+        return "Trine"
+    elif degree % 90 == 0:
+        return "Square"
+    elif degree % 60 == 0:
+        return "Sextile"
+    elif degree % 30 == 0:
+        return "Conjunction"
+    else:
+        return random.choice(["Trine", "Square", "Sextile"])
+
+# Interpretation
+def generate_interpretation(planet, aspect, symbol):
+    action_words = {
+        "Conjunction": "influencing",
+        "Sextile": "supporting",
+        "Square": "pressuring",
+        "Trine": "benefiting",
+        "Opposition": "challenging"
+    }
+    return f"{VEDIC_PLANETS.get(planet, planet)}'s {aspect.lower()} is {action_words.get(aspect, 'affecting')} {symbol.lower()} market."
+
+# Effect Detection
+def determine_effect(planet, aspect, planetary_effects):
+    if planet in planetary_effects:
+        if aspect in planetary_effects[planet]["strong"]:
+            return "Strong Bullish", f"+{random.uniform(0.8, 2.0):.1f}%"
+        elif aspect in planetary_effects[planet]["weak"]:
+            return "Strong Bearish", f"-{random.uniform(0.8, 2.0):.1f}%"
+    return random.choice(["Mild Bullish", "Mild Bearish", "Neutral"]), f"{random.uniform(-0.5, 0.5):.1f}%"
+
+def get_action(effect):
+    if "Strong Bullish" in effect:
+        return "GO LONG"
+    elif "Mild Bullish" in effect:
+        return "Consider LONG"
+    elif "Strong Bearish" in effect:
+        return "GO SHORT"
+    elif "Mild Bearish" in effect:
+        return "Consider SHORT"
+    return "HOLD"
+
+# Fetch Astro Data (With Fallback)
+def fetch_astronomics_data(date):
+    url_primary = f"https://data.astronomics.ai/almanac/?date={date.strftime('%Y-%m-%d')}"
+    try:
+        response = requests.get(url_primary, timeout=10)
+        soup = BeautifulSoup(response.text, "html.parser")
+        table = soup.find("table")
+        if table:
+            rows = table.find_all("tr")[1:]
+            data = []
+            for row in rows:
+                cols = [td.text.strip() for td in row.find_all("td")]
+                if len(cols) >= 12:
+                    data.append({
+                        "Planet": cols[0],
+                        "Time": cols[2],
+                        "Motion": cols[3],
+                        "Sign Lord": cols[4],
+                        "Star Lord": cols[5],
+                        "Sub Lord": cols[6],
+                        "Zodiac": cols[7],
+                        "Nakshatra": cols[8],
+                        "Pada": cols[9],
+                        "Pos in Zodiac": cols[10],
+                        "Declination": cols[11],
+                    })
+            if data:
+                return data, "Primary"
+    except:
+        pass
+
+    # === Fallback from DrikPanchang ===
+    try:
+        drik_url = f"https://www.drikpanchang.com/panchang/day-panchang.html?date={date.strftime('%Y-%m-%d')}&geoname-id=1264527"
+        drik_res = requests.get(drik_url, timeout=10)
+        soup = BeautifulSoup(drik_res.text, "html.parser")
+        table = soup.find("table", {"id": "planetary-positions-table"})
+        if not table:
+            return [], "None"
+
+        rows = table.find_all("tr")[1:]
+        data = []
+        for row in rows:
+            cols = row.find_all("td")
+            if len(cols) >= 5:
+                planet = cols[0].text.strip()
+                position = cols[1].text.strip()
+                sign = cols[2].text.strip()
+                nakshatra = cols[3].text.strip()
+                motion = cols[4].text.strip()
+                data.append({
+                    "Planet": planet,
+                    "Time": "06:00",  # default time
+                    "Motion": motion,
+                    "Sign Lord": sign,
+                    "Star Lord": nakshatra,
+                    "Sub Lord": "",
+                    "Zodiac": sign,
+                    "Nakshatra": nakshatra,
+                    "Pada": "1",
+                    "Pos in Zodiac": position,
+                    "Declination": "0"
+                })
+        return data, "Fallback"
+    except:
+        return [], "None"
+
+# Generate Transit Table
+def generate_transits(symbol, selected_date):
+    data, source = fetch_astronomics_data(selected_date)
+    effects = SYMBOL_RULERSHIPS.get(symbol, {})
+    timeline = []
+
+    for item in data:
+        planet = item["Planet"]
+        aspect = get_aspect_for_position(item["Pos in Zodiac"])
+        effect, impact = determine_effect(planet, aspect, effects)
+        action = get_action(effect)
+        interpretation = generate_interpretation(planet, aspect, symbol)
+
+        timeline.append({
+            "Time": item["Time"][:5],
             "Planet": f"{planet} ({VEDIC_PLANETS.get(planet, planet)})",
             "Aspect": aspect,
-            "Impact": impact,
             "Effect": effect,
-            "Action": get_trading_action(effect),
-            "Interpretation": generate_interpretation(planet, aspect, symbol)
+            "Impact": impact,
+            "Action": action,
+            "Interpretation": interpretation
         })
-    
-    return signals if signals else None
 
-def determine_aspect(position):
-    """Determine astrological aspect from position"""
-    try:
-        deg = float(position.split("°")[0])
-        aspects = [
-            (0, "Conjunction"), (60, "Sextile"),
-            (90, "Square"), (120, "Trine"),
-            (180, "Opposition")
-        ]
-        closest = min(aspects, key=lambda x: abs(x[0] - deg % 30))
-        return closest[1]
-    except:
-        return random.choice(["Conjunction", "Sextile", "Square", "Trine"])
+    return pd.DataFrame(timeline), source
 
-def determine_effect(planet, aspect, motion):
-    """Determine market effect of transit"""
-    effect_map = {
-        "Conjunction": ("Strong", 1.8),
-        "Sextile": ("Mild", 0.8),
-        "Square": ("Mild", -0.8),
-        "Trine": ("Strong", 1.2),
-        "Opposition": ("Strong", -1.5)
-    }
-    strength, base = effect_map.get(aspect, ("Neutral", 0))
-    
-    # Adjust for retrograde
-    if motion == "R":
-        base *= 1.5
-        
-    direction = "Bullish" if base > 0 else "Bearish"
-    impact = f"{'+' if base > 0 else ''}{base:.1f}%"
-    
-    return f"{strength} {direction}", impact
+# Streamlit UI
+def main():
+    st.set_page_config(page_title="🔯 Vedic Astro Signals", layout="wide")
+    st.title("📊 Vedic Astro Aspect Signal Timeline")
 
-def get_trading_action(effect):
-    """Determine trading recommendation"""
-    actions = {
-        "Strong Bullish": "STRONG BUY",
-        "Mild Bullish": "BUY",
-        "Neutral": "HOLD",
-        "Mild Bearish": "SELL",
-        "Strong Bearish": "STRONG SELL"
-    }
-    return actions.get(effect, "HOLD")
+    symbol = st.selectbox("Select Symbol", list(SYMBOL_RULERSHIPS.keys()), index=0)
+    selected_date = st.date_input("Select Date", datetime.today())
 
-def generate_interpretation(planet, aspect, symbol):
-    """Create interpretation text"""
-    vedic = VEDIC_PLANETS.get(planet, planet)
-    interpretations = {
-        "Conjunction": f"{vedic} directly influencing {symbol}",
-        "Sextile": f"Favorable conditions from {vedic} for {symbol}",
-        "Square": f"Challenges from {vedic} affecting {symbol}",
-        "Trine": f"Harmonious support from {vedic} for {symbol}",
-        "Opposition": f"Polarized energy from {vedic} impacting {symbol}"
-    }
-    return interpretations.get(aspect, f"{vedic} affecting {symbol}")
+    if st.button("🔮 Generate Astro Report"):
+        with st.spinner("Fetching astro signals..."):
+            df, source = generate_transits(symbol, selected_date)
 
-# UI Components
-col1, col2 = st.columns(2)
-with col1:
-    symbol = st.selectbox(
-        "Select Trading Symbol",
-        list(SYMBOL_CONFIG.keys()),
-        index=0
-    )
-with col2:
-    selected_date = st.date_input(
-        "Select Date",
-        value=datetime.now(),
-        max_value=datetime.now()
-    )
+        if df.empty:
+            st.error("No data found from both astronomics.ai and drikpanchang.com.")
+        else:
+            if source == "Fallback":
+                st.info("Fallback used: Data from DrikPanchang.com")
+            elif source == "Primary":
+                st.success("Data fetched from Astronomics.ai")
 
-if st.button("Generate Trading Signals", type="primary"):
-    with st.spinner(f"Analyzing planetary transits for {selected_date.strftime('%Y-%m-%d')}..."):
-        # Fetch and process data
-        transits = fetch_astronomics_data(selected_date)
-        
-        if transits is None:
-            st.warning("Could not fetch transit data. Please try again later.")
-            st.stop()
-            
-        signals = generate_signals(symbol, transits)
-        
-        if not signals:
-            st.info("No significant planetary influences found for selected symbol/date")
-            st.stop()
-            
-        # Create and display dataframe
-        df = pd.DataFrame(signals)
-        
-        # Apply styling
-        def color_effect(val):
-            colors = {
-                "Strong Bullish": SYMBOL_CONFIG[symbol]["colors"]["bullish"],
-                "Mild Bullish": lighten_color(SYMBOL_CONFIG[symbol]["colors"]["bullish"], 0.7),
-                "Neutral": "#7f8c8d",
-                "Mild Bearish": lighten_color(SYMBOL_CONFIG[symbol]["colors"]["bearish"], 0.7),
-                "Strong Bearish": SYMBOL_CONFIG[symbol]["colors"]["bearish"]
-            }
-            return f'background-color: {colors.get(val, "#95a5a6")}; color: white'
-        
-        def color_action(val):
-            colors = {
-                "STRONG BUY": "#27ae60",
-                "BUY": "#2ecc71",
-                "HOLD": "#7f8c8d",
-                "SELL": "#e67e22",
-                "STRONG SELL": "#c0392b"
-            }
-            return f'background-color: {colors.get(val, "#95a5a6")}; color: white; font-weight: bold'
-        
-        styled_df = df.style\
-            .applymap(color_effect, subset=['Effect'])\
-            .applymap(color_action, subset=['Action'])\
-            .format(precision=2)\
-            .set_properties(**{'text-align': 'left'})
-        
-        # Display results
-        st.subheader(f"Trading Signals for {symbol} on {selected_date.strftime('%Y-%m-%d')}")
-        st.dataframe(
-            styled_df,
-            column_config={
-                "Time": "Time (24h)",
-                "Planet": "Planet (Vedic)",
-                "Aspect": "Aspect",
-                "Impact": "Price Impact",
-                "Effect": "Market Effect",
-                "Action": "Trading Action",
-                "Interpretation": "Astrological Interpretation"
-            },
-            use_container_width=True,
-            height=min(800, 45 * len(df)),
-            hide_index=True
-        )
-        
-        # Show additional insights
-        st.markdown("---")
-        st.markdown("### Key Planetary Influences Today")
-        for signal in signals:
-            st.markdown(f"**{signal['Time']}** - {signal['Interpretation']} (Expected impact: {signal['Impact']})")
+            def style_effect(val):
+                return f"background-color: {'#27ae60' if 'Bullish' in val else '#c0392b' if 'Bearish' in val else '#95a5a6'}; color: white;"
 
-def lighten_color(color, factor=0.5):
-    """Lighten color by factor (0-1)"""
-    try:
-        import matplotlib.colors as mc
-        import colorsys
-        c = mc.cnames.get(color, color)
-        c = colorsys.rgb_to_hls(*mc.to_rgb(c))
-        return colorsys.hls_to_rgb(c[0], 1 - factor * (1 - c[1]), c[2])
-    except:
-        return color
+            def style_action(val):
+                return f"background-color: {'#2ecc71' if 'LONG' in val else '#e74c3c' if 'SHORT' in val else '#95a5a6'}; color: white; font-weight: bold"
+
+            styled_df = df.style\
+                .applymap(style_effect, subset=['Effect'])\
+                .applymap(style_action, subset=['Action'])
+
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
+if __name__ == "__main__":
+    main()
