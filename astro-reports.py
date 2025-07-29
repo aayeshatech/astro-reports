@@ -90,7 +90,7 @@ def get_planetary_positions(date_time):
     return pd.DataFrame(positions)
 
 # Function to calculate aspects with improved tolerance
-def get_aspects(positions):
+def get_aspects(positions, previous_aspects=None):
     aspects = []
     planets = positions["Planet"].tolist()
     degrees = positions["Degree"].apply(lambda x: float(x.split('°')[0]) + float(x.split('°')[1].split("'")[0])/60)
@@ -124,10 +124,22 @@ def get_aspects(positions):
             elif 177 < diff < 183:
                 aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Opposition", 
                                "Degree": f"{diff:.2f}°", "Weight": weight})
-    return pd.DataFrame(aspects)
+    
+    current_aspects = pd.DataFrame(aspects)
+    new_aspects = []
+    dissolved_aspects = []
+    
+    if previous_aspects is not None:
+        current_keys = set((row["Planet1"], row["Planet2"], row["Aspect"]) for _, row in current_aspects.iterrows())
+        prev_keys = set((row["Planet1"], row["Planet2"], row["Aspect"]) for _, row in previous_aspects.iterrows())
+        
+        new_aspects = [row for _, row in current_aspects.iterrows() if (row["Planet1"], row["Planet2"], row["Aspect"]) in (current_keys - prev_keys)]
+        dissolved_aspects = [row for _, row in previous_aspects.iterrows() if (row["Planet1"], row["Planet2"], row["Aspect"]) in (prev_keys - current_keys)]
+    
+    return current_aspects, new_aspects, dissolved_aspects
 
-# Improved function to determine trading signals
-def get_trading_signal(aspects):
+# Improved function to determine trading signals with swing logic
+def get_trading_signal(aspects, new_aspects, dissolved_aspects, previous_signal="Neutral"):
     if aspects.empty:
         return "Neutral", "gray", 0, 0
     
@@ -146,10 +158,26 @@ def get_trading_signal(aspects):
             elif aspect["Planet1"] in ["Mars", "Saturn", "Rahu", "Ketu"] or aspect["Planet2"] in ["Mars", "Saturn", "Rahu", "Ketu"]:
                 bearish_score += weight * 0.8
     
-    if bullish_score > bearish_score * 1.5:
-        return "Strong Buy", "green", bullish_score, bearish_score
-    elif bearish_score > bullish_score * 1.5:
-        return "Strong Sell", "red", bullish_score, bearish_score
+    # Adjust scores based on new and dissolved aspects for swing signals
+    for _, aspect in new_aspects:
+        weight = aspect["Weight"]
+        if aspect["Aspect"] in ["Trine", "Sextile"]:
+            bullish_score += weight * 1.2  # Boost for new bullish aspect
+        elif aspect["Aspect"] in ["Square", "Opposition"]:
+            bearish_score += weight * 1.2  # Boost for new bearish aspect
+    
+    for _, aspect in dissolved_aspects:
+        weight = aspect["Weight"]
+        if aspect["Aspect"] in ["Trine", "Sextile"]:
+            bullish_score -= weight * 0.5  # Reduce for dissolved bullish aspect
+        elif aspect["Aspect"] in ["Square", "Opposition"]:
+            bearish_score -= weight * 0.5  # Reduce for dissolved bearish aspect
+    
+    # Determine swing signal based on score changes and previous signal
+    if bullish_score > bearish_score * 1.5 or (new_aspects and any(a["Aspect"] in ["Trine", "Sextile"] for a in new_aspects)):
+        return "Swing Buy", "lightgreen", bullish_score, bearish_score
+    elif bearish_score > bullish_score * 1.5 or (new_aspects and any(a["Aspect"] in ["Square", "Opposition"] for a in new_aspects)):
+        return "Swing Sell", "lightcoral", bullish_score, bearish_score
     elif bullish_score > bearish_score:
         return "Buy", "lightgreen", bullish_score, bearish_score
     elif bearish_score > bullish_score:
@@ -158,9 +186,13 @@ def get_trading_signal(aspects):
         return "Neutral", "gray", bullish_score, bearish_score
 
 # Function to get significant transits
-def get_significant_transits(current_positions, previous_positions=None):
+def get_significant_transits(current_positions, previous_positions=None, reported_transits=None):
+    if reported_transits is None:
+        reported_transits = set()
+    
     if previous_positions is None:
-        return [f"{row['Planet']} in {row['Sign']} {row['Degree']}" for _, row in current_positions.iterrows()], []
+        initial_transits = [f"{row['Planet']} in {row['Sign']} {row['Degree']}" for _, row in current_positions.iterrows()]
+        return initial_transits, set(), reported_transits.union(set(initial_transits))
     
     significant_changes = []
     nakshatra_changes = []
@@ -175,14 +207,19 @@ def get_significant_transits(current_positions, previous_positions=None):
             prev_nakshatra = previous_row.iloc[0]["Nakshatra"]
             
             if current_row["Sign"] != prev_sign:
-                significant_changes.append(f"{planet} entered {current_row['Sign']}")
+                change = f"{planet} entered {current_row['Sign']}"
+                if change not in reported_transits:
+                    significant_changes.append(change)
+                    reported_transits.add(change)
             
             if current_row["Nakshatra"] != prev_nakshatra:
-                significant_changes.append(f"{planet} entered {current_row['Nakshatra']}")
-                nakshatra_changes.append(planet)
+                change = f"{planet} entered {current_row['Nakshatra']}"
+                if change not in reported_transits:
+                    significant_changes.append(change)
+                    reported_transits.add(change)
+                    nakshatra_changes.append(planet)
             
             try:
-                # Parse current degree
                 current_parts = current_row["Degree"].split('°')
                 if len(current_parts) != 2:
                     raise ValueError(f"Invalid degree format for {planet}: {current_row['Degree']}")
@@ -192,7 +229,6 @@ def get_significant_transits(current_positions, previous_positions=None):
                     raise ValueError(f"Invalid minute format for {planet}: {min_str}")
                 current_deg = float(deg) + float(min_parts[0])/60
                 
-                # Parse previous degree
                 prev_parts = prev_degree.split('°')
                 if len(prev_parts) != 2:
                     raise ValueError(f"Invalid degree format for {planet}: {prev_degree}")
@@ -203,14 +239,20 @@ def get_significant_transits(current_positions, previous_positions=None):
                 prev_deg = float(prev_deg_val) + float(prev_min_parts[0])/60
                 
                 if abs(current_deg - prev_deg) > 0.5:
-                    significant_changes.append(f"{planet} moved to {current_row['Degree']}")
+                    change = f"{planet} moved to {current_row['Degree']}"
+                    if change not in reported_transits:
+                        significant_changes.append(change)
+                        reported_transits.add(change)
             except (ValueError, IndexError) as e:
                 st.warning(f"Error parsing degrees for {planet}: {str(e)}. Skipping degree comparison.")
                 significant_changes.append(f"{planet} degree parsing failed")
         else:
-            significant_changes.append(f"{planet} in {current_row['Sign']} {current_row['Degree']}")
+            change = f"{planet} in {current_row['Sign']} {current_row['Degree']}"
+            if change not in reported_transits:
+                significant_changes.append(change)
+                reported_transits.add(change)
     
-    return significant_changes if significant_changes else ["No significant changes"], nakshatra_changes
+    return significant_changes if significant_changes else [], nakshatra_changes, reported_transits
 
 # Streamlit app
 st.set_page_config(layout="wide")
@@ -241,7 +283,7 @@ with tab1:
         monthly_data = []
         previous_positions = None
         for day, positions in enumerate(transits, 1):
-            if day == 1:  # Only show first date of the month
+            if day == 1:
                 for _, row in positions.iterrows():
                     monthly_data.append({
                         "Date": row["Date"].split(" ")[0],
@@ -253,7 +295,7 @@ with tab1:
                         "Pada": row["Pada"],
                         "Retrograde": row["Retrograde"]
                     })
-            _, nakshatra_changes = get_significant_transits(positions, previous_positions)
+            _, nakshatra_changes, _ = get_significant_transits(positions, previous_positions)
             if nakshatra_changes:
                 for planet in nakshatra_changes:
                     idx = positions[positions["Planet"] == planet].index[0]
@@ -280,7 +322,7 @@ with tab1:
             styled_df = monthly_df.style.apply(highlight_nakshatra_changes, axis=1)
             st.dataframe(styled_df, use_container_width=True)
         
-        aspects = pd.concat([get_aspects(df) for df in transits], ignore_index=True)
+        aspects = pd.concat([get_aspects(df)[0] for df in transits], ignore_index=True)
         if not aspects.empty:
             st.subheader(f"{title} Aspects")
             st.dataframe(aspects, use_container_width=True)
@@ -330,28 +372,32 @@ with tab2:
         else:
             timeline = []
             previous_positions = None
-            seen_aspects = set()
+            previous_aspects = None
+            reported_transits = set()
+            previous_signal = "Neutral"
             
             current_time = start_datetime
             while current_time <= end_datetime:
                 positions = get_planetary_positions(current_time)
-                aspects = get_aspects(positions)
-                signal, color, bull_score, bear_score = get_trading_signal(aspects)
+                current_aspects, new_aspects, dissolved_aspects = get_aspects(positions, previous_aspects)
+                signal, color, bull_score, bear_score = get_trading_signal(current_aspects, new_aspects, dissolved_aspects, previous_signal)
                 
-                significant_transits, _ = get_significant_transits(positions, previous_positions)
+                significant_transits, _, reported_transits = get_significant_transits(positions, previous_positions, reported_transits)
                 
                 active_aspects = []
                 unique_aspects = set()
-                for _, aspect in aspects.iterrows():
+                for _, aspect in current_aspects.iterrows():
                     aspect_key = f"{aspect['Planet1']}-{aspect['Planet2']}-{aspect['Aspect']}"
-                    if aspect_key not in seen_aspects:
-                        seen_aspects.add(aspect_key)
+                    if aspect_key not in unique_aspects:
                         unique_aspects.add(aspect_key)
                         active_aspects.append(f"{aspect['Planet1']}-{aspect['Planet2']}: {aspect['Aspect']} ({aspect['Degree']})")
                 
+                # Only show significant transits or "No significant changes" if it's the first entry or a change occurred
+                transits_display = ", ".join(significant_transits) if significant_transits else "No significant changes" if not timeline else ""
+                
                 timeline.append({
                     "DateTime": current_time.strftime("%Y-%m-%d %H:%M IST"),
-                    "Significant Transits": ", ".join(significant_transits),
+                    "Significant Transits": transits_display,
                     "Active Aspects": ", ".join(active_aspects),
                     "Signal": signal,
                     "Bullish Score": bull_score,
@@ -360,6 +406,8 @@ with tab2:
                 })
                 
                 previous_positions = positions.copy()
+                previous_aspects = current_aspects.copy()
+                previous_signal = signal
                 current_time += timedelta(minutes=15)
             
             timeline_df = pd.DataFrame(timeline)
@@ -367,11 +415,11 @@ with tab2:
             display_df = timeline_df.drop(columns=['Color'])
             
             def color_signal(val):
-                if val == "Strong Buy":
+                if val == "Swing Buy":
                     return 'color: green'
                 elif val == "Buy":
                     return 'color: lightgreen'
-                elif val == "Strong Sell":
+                elif val == "Swing Sell":
                     return 'color: red'
                 elif val == "Sell":
                     return 'color: lightcoral'
@@ -416,7 +464,6 @@ st.markdown("""
 1. Install dependencies: `pip install -r requirements.txt` and `pip install pyswisseph`.
 2. Run the app: `streamlit run astro-reports.py`.
 3. Use the 'Planetary Report' tab to view monthly transits, starting with the first date of the month and highlighting nakshatra changes.
-4. Use the 'Stock Search' tab to input a stock symbol, date range with times, and analyze the intraday timeline with filtered aspects.
+4. Use the 'Stock Search' tab to input a stock symbol, date range with times, and analyze the intraday timeline with filtered aspects and swing signals.
 5. Ensure Swiss Ephemeris data files are installed (see https://pyswisseph.readthedocs.io/en/latest/installation.html).
 """)
-
