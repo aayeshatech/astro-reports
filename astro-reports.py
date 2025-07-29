@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import swisseph as swe
 import pandas as pd
@@ -543,4 +542,4 @@ st.markdown("""
 4. Use the 'Stock Search' tab to input a stock symbol, date range with times, and analyze the intraday timeline with updated planetary positions and astro aspect-based signals.
 5. Ensure Swiss Ephemeris data files are installed (see https://pyswisseph.readthedocs.io/en/latest/installation.html).
 """)
-```
+
