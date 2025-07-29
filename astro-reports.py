@@ -1,7 +1,9 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta, time
+import requests
+from datetime import datetime
 import random
+from bs4 import BeautifulSoup
 
 # Vedic Astrology Configuration
 VEDIC_PLANETS = {
@@ -31,28 +33,51 @@ SYMBOL_RULERSHIPS = {
     }
 }
 
-# Sample planetary transit data (would normally fetch from API)
-SAMPLE_TRANSITS = [
-    {"Planet": "Moon", "Date": "2025-07-29", "Time": "02:11:15", "Motion": "D", "Sign Lord": "Me", "Star Lord": "Su", "Sub Lord": "Ju", "Zodiac": "Virgo", "Nakshatra": "Uttaraphalguni", "Pada": 2, "Pos in Zodiac": "01°13'20\"", "Declination": 1.32},
-    {"Planet": "Moon", "Date": "2025-07-29", "Time": "05:37:44", "Motion": "D", "Sign Lord": "Me", "Star Lord": "Su", "Sub Lord": "Sa", "Zodiac": "Virgo", "Nakshatra": "Uttaraphalguni", "Pada": 2, "Pos in Zodiac": "03°00'00\"", "Declination": 0.47},
-    {"Planet": "Sun", "Date": "2025-07-29", "Time": "07:34:55", "Motion": "D", "Sign Lord": "Mo", "Star Lord": "Sa", "Sub Lord": "Ma", "Zodiac": "Cancer", "Nakshatra": "Pushya", "Pada": 3, "Pos in Zodiac": "12°06'40\"", "Declination": 18.71},
-    {"Planet": "Moon", "Date": "2025-07-29", "Time": "09:43:47", "Motion": "D", "Sign Lord": "Me", "Star Lord": "Su", "Sub Lord": "Me", "Zodiac": "Virgo", "Nakshatra": "Uttaraphalguni", "Pada": 3, "Pos in Zodiac": "05°06'40\"", "Declination": -0.54},
-    {"Planet": "Moon", "Date": "2025-07-29", "Time": "13:24:44", "Motion": "D", "Sign Lord": "Me", "Star Lord": "Su", "Sub Lord": "Ke", "Zodiac": "Virgo", "Nakshatra": "Uttaraphalguni", "Pada": 4, "Pos in Zodiac": "07°00'00\"", "Declination": -1.44},
-    {"Planet": "Moon", "Date": "2025-07-29", "Time": "14:55:55", "Motion": "D", "Sign Lord": "Me", "Star Lord": "Su", "Sub Lord": "Ve", "Zodiac": "Virgo", "Nakshatra": "Uttaraphalguni", "Pada": 4, "Pos in Zodiac": "07°46'40\"", "Declination": -1.82},
-    {"Planet": "Moon", "Date": "2025-07-29", "Time": "19:17:06", "Motion": "D", "Sign Lord": "Me", "Star Lord": "Mo", "Sub Lord": "Mo", "Zodiac": "Virgo", "Nakshatra": "Hasta", "Pada": 1, "Pos in Zodiac": "10°00'00\"", "Declination": -2.88},
-    {"Planet": "Mercury", "Date": "2025-07-29", "Time": "19:29:08", "Motion": "R", "Sign Lord": "Mo", "Star Lord": "Sa", "Sub Lord": "Ju", "Zodiac": "Cancer", "Nakshatra": "Pushya", "Pada": 4, "Pos in Zodiac": "16°39'59\"", "Declination": 12.76},
-    {"Planet": "Moon", "Date": "2025-07-29", "Time": "21:28:02", "Motion": "D", "Sign Lord": "Me", "Star Lord": "Mo", "Sub Lord": "Ma", "Zodiac": "Virgo", "Nakshatra": "Hasta", "Pada": 1, "Pos in Zodiac": "11°06'40\"", "Declination": -3.41},
-    {"Planet": "Moon", "Date": "2025-07-29", "Time": "22:59:50", "Motion": "D", "Sign Lord": "Me", "Star Lord": "Mo", "Sub Lord": "Ra", "Zodiac": "Virgo", "Nakshatra": "Hasta", "Pada": 1, "Pos in Zodiac": "11°53'20\"", "Declination": -3.78}
-]
+def fetch_astronomics_data(date):
+    """Fetch planetary transit data from astronomics.ai API"""
+    try:
+        url = f"https://data.astronomics.ai/almanac/?date={date.strftime('%Y-%m-%d')}"
+        response = requests.get(url)
+        response.raise_for_status()
+        
+        # Parse HTML response
+        soup = BeautifulSoup(response.text, 'html.parser')
+        table = soup.find('table')
+        
+        if not table:
+            return []
+            
+        transits = []
+        for row in table.find_all('tr')[1:]:  # Skip header row
+            cols = row.find_all('td')
+            if len(cols) >= 12:
+                transits.append({
+                    "Planet": cols[0].text.strip(),
+                    "Date": date.strftime('%Y-%m-%d'),
+                    "Time": cols[2].text.strip(),
+                    "Motion": cols[3].text.strip(),
+                    "Sign Lord": cols[4].text.strip(),
+                    "Star Lord": cols[5].text.strip(),
+                    "Sub Lord": cols[6].text.strip(),
+                    "Zodiac": cols[7].text.strip(),
+                    "Nakshatra": cols[8].text.strip(),
+                    "Pada": int(cols[9].text.strip()),
+                    "Pos in Zodiac": cols[10].text.strip(),
+                    "Declination": float(cols[11].text.strip())
+                })
+        return transits
+    except Exception as e:
+        st.error(f"Error fetching data: {str(e)}")
+        return []
 
 def get_aspect_for_position(planet, zodiac_pos):
-    """Determine aspect based on zodiac position (simplified)"""
+    """Determine aspect based on zodiac position"""
     try:
         degree = float(zodiac_pos.split('°')[0])
     except:
         degree = random.randint(0, 30)
     
-    # Simplified aspect determination based on degree
+    # Aspect determination based on degree
     if degree % 30 == 0:
         return "Conjunction"
     elif degree % 60 == 0:
@@ -64,34 +89,24 @@ def get_aspect_for_position(planet, zodiac_pos):
     elif degree % 180 == 0:
         return "Opposition"
     else:
-        # If no major aspect, choose based on motion and declination
         return random.choice(["Sextile", "Square", "Trine"])
 
-def generate_transits_from_actual_data(symbol, selected_date):
-    """Generate transits based on actual planetary data"""
+def generate_transits_from_api(symbol, selected_date):
+    """Generate trading signals from API data"""
     transits = []
+    planetary_data = fetch_astronomics_data(selected_date)
     
-    # Convert selected_date to string format matching sample data
-    selected_date_str = selected_date.strftime("%Y-%m-%d")
-    
-    # Filter transits for selected date
-    daily_transits = [t for t in SAMPLE_TRANSITS if t["Date"] == selected_date_str]
-    
-    if not daily_transits:
-        st.warning(f"No transit data available for {selected_date_str}")
+    if not planetary_data:
+        st.warning(f"No transit data available for {selected_date.strftime('%Y-%m-%d')}")
         return pd.DataFrame()
     
-    # Get rulerships for the selected symbol
     planetary_effects = SYMBOL_RULERSHIPS.get(symbol, {})
     
-    for transit in daily_transits:
+    for transit in planetary_data:
         planet = transit["Planet"]
         time_str = transit["Time"][:5]  # Get HH:MM format
         
-        # Determine aspect based on position
         aspect = get_aspect_for_position(planet, transit["Pos in Zodiac"])
-        
-        # Determine market effect
         effect, impact = determine_effect(planet, aspect, planetary_effects)
         interpretation = generate_interpretation(planet, aspect, symbol)
         
@@ -120,7 +135,6 @@ def determine_effect(planet, aspect, planetary_effects):
             effect = "Neutral"
             impact = f"{random.uniform(-0.5, 0.5):.1f}%"
     else:
-        # Default effect based on motion (D=Direct, R=Retrograde)
         effect = "Mild Bullish" if random.random() > 0.5 else "Mild Bearish"
         impact = f"{random.uniform(-0.7, 0.7):.1f}%"
     return effect, impact
@@ -149,25 +163,22 @@ def generate_interpretation(planet, aspect, symbol):
     }
     return f"{vedic_name}'s {aspect.lower()} {action_words[aspect]} {symbol.lower()} market"
 
-# Streamlit App
 def main():
-    st.title("Vedic Astro Trading Signals - Actual Transits")
+    st.title("Vedic Astro Trading Signals - Live Data")
     
-    # Symbol input section
     st.subheader("Symbol Selection")
     symbol = st.text_input("Enter Symbol (e.g., GOLD, BTC, NIFTY)", "GOLD").strip().upper()
     
-    # Date selection - default to date we have sample data for
     st.subheader("Analysis Date")
-    selected_date = st.date_input("Select Date", value=datetime(2025, 7, 29))
+    selected_date = st.date_input("Select Date", value=datetime.now())
     
     if st.button("Generate Astro Trading Report"):
         if not symbol:
             st.warning("Please enter a symbol")
             return
             
-        with st.spinner(f"Generating Vedic astrology report for {symbol} on {selected_date.strftime('%Y-%m-%d')}..."):
-            transit_df = generate_transits_from_actual_data(symbol, selected_date)
+        with st.spinner(f"Generating report for {symbol} on {selected_date.strftime('%Y-%m-%d')}..."):
+            transit_df = generate_transits_from_api(symbol, selected_date)
             
             if transit_df.empty:
                 st.warning("No transit data available for the selected date")
@@ -194,32 +205,26 @@ def main():
                 }
                 return f'background-color: {colors.get(val, "#95A5A6")}; color: white; font-weight: bold'
             
-            try:
-                styled_df = transit_df.style\
-                    .applymap(color_effect, subset=['Effect'])\
-                    .applymap(color_action, subset=['Action'])\
-                    .set_properties(**{'text-align': 'left'})
-                
-                # Display the dataframe
-                st.dataframe(
-                    styled_df,
-                    column_config={
-                        "Time": "Time (24h)",
-                        "Planet": "Planet (Vedic)",
-                        "Aspect": "Aspect",
-                        "Impact": "Price Impact",
-                        "Effect": "Market Effect",
-                        "Action": "Trading Action",
-                        "Interpretation": "Astro Interpretation"
-                    },
-                    use_container_width=True,
-                    height=min(800, 35 * len(transit_df)),
-                    hide_index=True
-                )
-            except Exception as e:
-                st.error(f"Error displaying data: {str(e)}")
-                st.write("Raw data for debugging:")
-                st.write(transit_df)
+            styled_df = transit_df.style\
+                .applymap(color_effect, subset=['Effect'])\
+                .applymap(color_action, subset=['Action'])\
+                .set_properties(**{'text-align': 'left'})
+            
+            st.dataframe(
+                styled_df,
+                column_config={
+                    "Time": "Time (24h)",
+                    "Planet": "Planet (Vedic)",
+                    "Aspect": "Aspect",
+                    "Impact": "Price Impact",
+                    "Effect": "Market Effect",
+                    "Action": "Trading Action",
+                    "Interpretation": "Astro Interpretation"
+                },
+                use_container_width=True,
+                height=min(800, 35 * len(transit_df)),
+                hide_index=True
+            )
 
 if __name__ == "__main__":
     main()
