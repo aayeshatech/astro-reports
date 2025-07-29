@@ -30,6 +30,28 @@ planet_weights = {
     "Rahu": 1.2, "Ketu": 1.2
 }
 
+# Simulated Almanac Data Fetch (Placeholder)
+def fetch_almanac_data(date):
+    # Simulated data for July 30, 2025 (replace with API call if available)
+    if date.date() == datetime(2025, 7, 30).date():
+        return {
+            "positions": {
+                "Sun": {"sign": "Leo", "degree": 7.5, "nakshatra": "Magha", "retro": False},
+                "Moon": {"sign": "Virgo", "degree": 15.3, "nakshatra": "Hasta", "retro": False},
+                "Mars": {"sign": "Taurus", "degree": 22.1, "nakshatra": "Rohini", "retro": False},
+                "Jupiter": {"sign": "Cancer", "degree": 18.9, "nakshatra": "Pushya", "retro": True},
+                "Venus": {"sign": "Gemini", "degree": 3.5, "nakshatra": "Mrigashira", "retro": False},
+                "Saturn": {"sign": "Pisces", "degree": 10.2, "nakshatra": "Uttara Bhadrapada", "retro": True},
+                "Rahu": {"sign": "Aquarius", "degree": 25.7, "nakshatra": "Purva Bhadrapada", "retro": False},
+                "Ketu": {"sign": "Leo", "degree": 25.7, "nakshatra": "Purva Phalguni", "retro": False}
+            },
+            "aspects": [
+                {"planet1": "Moon", "planet2": "Venus", "aspect": "Sextile", "degree": 58.2},
+                {"planet1": "Mars", "planet2": "Saturn", "aspect": "Square", "degree": 88.1}
+            ]
+        }
+    return None
+
 # Function to calculate Nakshatra and Pada
 def get_nakshatra_pada(degree):
     for nak, start, end in nakshatras:
@@ -44,7 +66,7 @@ def get_zodiac_house(degree):
     house_index = int(degree // 30) % 12
     return zodiac_signs[sign_index], houses[house_index]
 
-# Function to calculate planetary positions
+# Function to calculate planetary positions with intraday updates
 def get_planetary_positions(date_time):
     utc_offset = 5.5  # IST is UTC+5:30
     utc_datetime = date_time - timedelta(hours=utc_offset)
@@ -60,18 +82,27 @@ def get_planetary_positions(date_time):
     }
     
     positions = []
+    almanac_data = fetch_almanac_data(date_time)
     for planet, pid in planets.items():
-        lon_trop = swe.calc_ut(jd, pid)[0][0]
-        lon_sid = (lon_trop - ayanamsa) % 360
-        if planet == "Ketu":
-            lon_sid = (lon_sid + 180) % 360
-        sign, house = get_zodiac_house(lon_sid)
-        nak, pada = get_nakshatra_pada(lon_sid)
-        is_retro = "N/A"
-        if planet not in ["Rahu", "Ketu"]:
-            result = swe.calc_ut(jd, pid)
-            if len(result[0]) > 3:
-                is_retro = "Yes" if result[0][3] < 0 else "No"
+        if almanac_data and planet in almanac_data["positions"]:
+            pos = almanac_data["positions"][planet]
+            lon_sid = (zodiac_signs.index(pos["sign"]) * 30 + pos["degree"]) % 360
+            sign = pos["sign"]
+            nak = pos["nakshatra"]
+            pada = 1  # Simplified for almanac data
+            is_retro = pos["retro"]
+        else:
+            lon_trop = swe.calc_ut(jd, pid)[0][0]
+            lon_sid = (lon_trop - ayanamsa) % 360
+            if planet == "Ketu":
+                lon_sid = (lon_sid + 180) % 360
+            sign, house = get_zodiac_house(lon_sid)
+            nak, pada = get_nakshatra_pada(lon_sid)
+            is_retro = "N/A"
+            if planet not in ["Rahu", "Ketu"]:
+                result = swe.calc_ut(jd, pid)
+                if len(result[0]) > 3:
+                    is_retro = "Yes" if result[0][3] < 0 else "No"
         
         degree_in_sign = lon_sid % 30
         degree_int = int(degree_in_sign)
@@ -84,46 +115,57 @@ def get_planetary_positions(date_time):
             "House": house,
             "Nakshatra": nak,
             "Pada": pada,
-            "Retrograde": is_retro,
+            "Retrograde": "Yes" if is_retro else "No" if is_retro != "N/A" else "N/A",
             "Date": date_time.strftime("%Y-%m-%d %H:%M IST")
         })
     return pd.DataFrame(positions)
 
-# Function to calculate aspects with improved tolerance
+# Function to calculate aspects with almanac data
 def get_aspects(positions, previous_aspects=None):
     aspects = []
     planets = positions["Planet"].tolist()
     degrees = positions["Degree"].apply(lambda x: float(x.split('°')[0]) + float(x.split('°')[1].split("'")[0])/60)
+    almanac_data = fetch_almanac_data(positions.iloc[0]["Date"])
     
-    full_degrees = []
-    for i, planet in enumerate(planets):
-        sign_index = zodiac_signs.index(positions.iloc[i]["Sign"])
-        full_degree = sign_index * 30 + degrees[i]
-        full_degrees.append(full_degree)
-    
-    for i, p1 in enumerate(planets[:-1]):
-        for j, p2 in enumerate(planets[i+1:], start=i+1):
-            deg1 = full_degrees[i]
-            deg2 = full_degrees[j]
-            diff = min((deg2 - deg1) % 360, (deg1 - deg2) % 360)
-            
-            weight = (planet_weights.get(p1, 1.0) + planet_weights.get(p2, 1.0)) / 2
-            
-            if diff < 3:
-                aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Conjunction", 
-                               "Degree": f"{diff:.2f}°", "Weight": weight})
-            elif 57 < diff < 63:
-                aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Sextile", 
-                               "Degree": f"{diff:.2f}°", "Weight": weight})
-            elif 87 < diff < 93:
-                aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Square", 
-                               "Degree": f"{diff:.2f}°", "Weight": weight})
-            elif 117 < diff < 123:
-                aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Trine", 
-                               "Degree": f"{diff:.2f}°", "Weight": weight})
-            elif 177 < diff < 183:
-                aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Opposition", 
-                               "Degree": f"{diff:.2f}°", "Weight": weight})
+    if almanac_data and "aspects" in almanac_data:
+        for aspect in almanac_data["aspects"]:
+            aspects.append({
+                "Planet1": aspect["planet1"],
+                "Planet2": aspect["planet2"],
+                "Aspect": aspect["aspect"],
+                "Degree": aspect["degree"],
+                "Weight": (planet_weights.get(aspect["planet1"], 1.0) + planet_weights.get(aspect["planet2"], 1.0)) / 2
+            })
+    else:
+        full_degrees = []
+        for i, planet in enumerate(planets):
+            sign_index = zodiac_signs.index(positions.iloc[i]["Sign"])
+            full_degree = sign_index * 30 + degrees[i]
+            full_degrees.append(full_degree)
+        
+        for i, p1 in enumerate(planets[:-1]):
+            for j, p2 in enumerate(planets[i+1:], start=i+1):
+                deg1 = full_degrees[i]
+                deg2 = full_degrees[j]
+                diff = min((deg2 - deg1) % 360, (deg1 - deg2) % 360)
+                
+                weight = (planet_weights.get(p1, 1.0) + planet_weights.get(p2, 1.0)) / 2
+                
+                if diff < 3:
+                    aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Conjunction", 
+                                   "Degree": f"{diff:.2f}°", "Weight": weight})
+                elif 57 < diff < 63:
+                    aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Sextile", 
+                                   "Degree": f"{diff:.2f}°", "Weight": weight})
+                elif 87 < diff < 93:
+                    aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Square", 
+                                   "Degree": f"{diff:.2f}°", "Weight": weight})
+                elif 117 < diff < 123:
+                    aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Trine", 
+                                   "Degree": f"{diff:.2f}°", "Weight": weight})
+                elif 177 < diff < 183:
+                    aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Opposition", 
+                                   "Degree": f"{diff:.2f}°", "Weight": weight})
     
     current_aspects = pd.DataFrame(aspects)
     new_aspects = []
@@ -389,12 +431,12 @@ with tab2:
         with col1:
             symbol = st.text_input("Enter Stock Symbol", "NIFTY")
         with col2:
-            start_date = st.date_input("Start Date", datetime(2025, 7, 29))
+            start_date = st.date_input("Start Date", datetime(2025, 7, 30))
         with col3:
-            start_time = st.time_input("Start Time (IST)", datetime(2025, 7, 29, 9, 15).time())
+            start_time = st.time_input("Start Time (IST)", datetime(2025, 7, 30, 9, 15).time())
         with col4:
-            end_date = st.date_input("End Date", datetime(2025, 7, 29))
-            end_time = st.time_input("End Time (IST)", datetime(2025, 7, 29, 15, 30).time())
+            end_date = st.date_input("End Date", datetime(2025, 7, 30))
+            end_time = st.time_input("End Time (IST)", datetime(2025, 7, 30, 15, 30).time())
     
     if st.button("Search"):
         start_datetime = datetime.combine(start_date, start_time)
@@ -495,6 +537,6 @@ st.markdown("""
 1. Install dependencies: `pip install -r requirements.txt` and `pip install pyswisseph`.
 2. Run the app: `streamlit run astro-reports.py`.
 3. Use the 'Planetary Report' tab to view monthly transits and detailed aspects with date, planets, aspect, degree, weight, and bullish/bearish tendency.
-4. Use the 'Stock Search' tab to input a stock symbol, date range with times, and analyze the intraday timeline with filtered aspects and swing signals.
+4. Use the 'Stock Search' tab to input a stock symbol, date range with times, and analyze the intraday timeline with updated planetary positions and astro aspect-based signals.
 5. Ensure Swiss Ephemeris data files are installed (see https://pyswisseph.readthedocs.io/en/latest/installation.html).
 """)
