@@ -159,14 +159,14 @@ def get_trading_signal(aspects, new_aspects, dissolved_aspects, previous_signal=
                 bearish_score += weight * 0.8
     
     # Adjust scores based on new and dissolved aspects for swing signals
-    for _, aspect in new_aspects:
+    for aspect in new_aspects:
         weight = aspect["Weight"]
         if aspect["Aspect"] in ["Trine", "Sextile"]:
             bullish_score += weight * 1.2  # Boost for new bullish aspect
         elif aspect["Aspect"] in ["Square", "Opposition"]:
             bearish_score += weight * 1.2  # Boost for new bearish aspect
     
-    for _, aspect in dissolved_aspects:
+    for aspect in dissolved_aspects:
         weight = aspect["Weight"]
         if aspect["Aspect"] in ["Trine", "Sextile"]:
             bullish_score -= weight * 0.5  # Reduce for dissolved bullish aspect
@@ -322,10 +322,32 @@ with tab1:
             styled_df = monthly_df.style.apply(highlight_nakshatra_changes, axis=1)
             st.dataframe(styled_df, use_container_width=True)
         
-        aspects = pd.concat([get_aspects(df)[0] for df in transits], ignore_index=True)
-        if not aspects.empty:
+        # Collect aspects with date
+        aspect_data = []
+        previous_aspects = None
+        for day, positions in enumerate(transits, 1):
+            current_aspects, _, _ = get_aspects(positions, previous_aspects)
+            for _, aspect in current_aspects.iterrows():
+                date = positions.iloc[0]["Date"].split(" ")[0]  # Use first position's date
+                tendency = "Bullish" if aspect["Aspect"] in ["Trine", "Sextile"] else \
+                           "Bearish" if aspect["Aspect"] in ["Square", "Opposition"] else \
+                           "Neutral" if aspect["Aspect"] == "Conjunction" and \
+                           (aspect["Planet1"] in ["Jupiter", "Venus"] or aspect["Planet2"] in ["Jupiter", "Venus"]) else "Bearish"
+                aspect_data.append({
+                    "Date": date,
+                    "Planet1": aspect["Planet1"],
+                    "Planet2": aspect["Planet2"],
+                    "Aspect": aspect["Aspect"],
+                    "Degree": aspect["Degree"],
+                    "Weight": aspect["Weight"],
+                    "Bullish or Bearish": tendency
+                })
+            previous_aspects = current_aspects.copy()
+        
+        aspects_df = pd.DataFrame(aspect_data)
+        if not aspects_df.empty:
             st.subheader(f"{title} Aspects")
-            st.dataframe(aspects, use_container_width=True)
+            st.dataframe(aspects_df, use_container_width=True)
 
     # July Transits
     july_transits = []
@@ -392,7 +414,6 @@ with tab2:
                         unique_aspects.add(aspect_key)
                         active_aspects.append(f"{aspect['Planet1']}-{aspect['Planet2']}: {aspect['Aspect']} ({aspect['Degree']})")
                 
-                # Only show significant transits or "No significant changes" if it's the first entry or a change occurred
                 transits_display = ", ".join(significant_transits) if significant_transits else "No significant changes" if not timeline else ""
                 
                 timeline.append({
@@ -401,7 +422,7 @@ with tab2:
                     "Active Aspects": ", ".join(active_aspects),
                     "Signal": signal,
                     "Bullish Score": bull_score,
-                    "Bearish Score": bear_score,
+                    "Bearish Score": bearish_score,
                     "Color": color
                 })
                 
@@ -463,7 +484,7 @@ st.markdown("""
 ### Instructions
 1. Install dependencies: `pip install -r requirements.txt` and `pip install pyswisseph`.
 2. Run the app: `streamlit run astro-reports.py`.
-3. Use the 'Planetary Report' tab to view monthly transits, starting with the first date of the month and highlighting nakshatra changes.
+3. Use the 'Planetary Report' tab to view monthly transits and detailed aspects with date, planets, aspect, degree, weight, and bullish/bearish tendency.
 4. Use the 'Stock Search' tab to input a stock symbol, date range with times, and analyze the intraday timeline with filtered aspects and swing signals.
 5. Ensure Swiss Ephemeris data files are installed (see https://pyswisseph.readthedocs.io/en/latest/installation.html).
 """)
