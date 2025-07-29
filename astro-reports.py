@@ -59,7 +59,12 @@ def get_planetary_positions(date_time):
             lon_sid = (lon_sid + 180) % 360
         sign, house = get_zodiac_house(lon_sid)
         nak, pada = get_nakshatra_pada(lon_sid % 30 + (int(lon_sid // 30) * 30))
-        is_retro = swe.calc_ut(jd, pid)[3] < 0
+        # Check retrograde only for planets (not nodes)
+        is_retro = "N/A"
+        if planet not in ["Rahu", "Ketu"]:
+            result = swe.calc_ut(jd, pid)
+            if len(result[0]) > 3:  # Ensure speed is available
+                is_retro = "Yes" if result[0][3] < 0 else "No"
         positions.append({
             "Planet": planet,
             "Sign": sign,
@@ -67,7 +72,7 @@ def get_planetary_positions(date_time):
             "House": house,
             "Nakshatra": nak,
             "Pada": pada,
-            "Retrograde": "Yes" if is_retro else "No"
+            "Retrograde": is_retro
         })
     return pd.DataFrame(positions)
 
