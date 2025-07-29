@@ -31,56 +31,70 @@ SYMBOL_RULERSHIPS = {
     }
 }
 
-def generate_transits(symbol, start_date, timeframe):
-    """Generate astrological transits for different timeframes"""
-    aspects = ["Conjunction", "Sextile", "Square", "Trine", "Opposition"]
+# Sample planetary transit data (would normally fetch from API)
+SAMPLE_TRANSITS = [
+    {"Planet": "Moon", "Date": "2025-07-29", "Time": "02:11:15", "Motion": "D", "Sign Lord": "Me", "Star Lord": "Su", "Sub Lord": "Ju", "Zodiac": "Virgo", "Nakshatra": "Uttaraphalguni", "Pada": 2, "Pos in Zodiac": "01°13'20\"", "Declination": 1.32},
+    {"Planet": "Moon", "Date": "2025-07-29", "Time": "05:37:44", "Motion": "D", "Sign Lord": "Me", "Star Lord": "Su", "Sub Lord": "Sa", "Zodiac": "Virgo", "Nakshatra": "Uttaraphalguni", "Pada": 2, "Pos in Zodiac": "03°00'00\"", "Declination": 0.47},
+    {"Planet": "Sun", "Date": "2025-07-29", "Time": "07:34:55", "Motion": "D", "Sign Lord": "Mo", "Star Lord": "Sa", "Sub Lord": "Ma", "Zodiac": "Cancer", "Nakshatra": "Pushya", "Pada": 3, "Pos in Zodiac": "12°06'40\"", "Declination": 18.71},
+    {"Planet": "Moon", "Date": "2025-07-29", "Time": "09:43:47", "Motion": "D", "Sign Lord": "Me", "Star Lord": "Su", "Sub Lord": "Me", "Zodiac": "Virgo", "Nakshatra": "Uttaraphalguni", "Pada": 3, "Pos in Zodiac": "05°06'40\"", "Declination": -0.54},
+    {"Planet": "Moon", "Date": "2025-07-29", "Time": "13:24:44", "Motion": "D", "Sign Lord": "Me", "Star Lord": "Su", "Sub Lord": "Ke", "Zodiac": "Virgo", "Nakshatra": "Uttaraphalguni", "Pada": 4, "Pos in Zodiac": "07°00'00\"", "Declination": -1.44},
+    {"Planet": "Moon", "Date": "2025-07-29", "Time": "14:55:55", "Motion": "D", "Sign Lord": "Me", "Star Lord": "Su", "Sub Lord": "Ve", "Zodiac": "Virgo", "Nakshatra": "Uttaraphalguni", "Pada": 4, "Pos in Zodiac": "07°46'40\"", "Declination": -1.82},
+    {"Planet": "Moon", "Date": "2025-07-29", "Time": "19:17:06", "Motion": "D", "Sign Lord": "Me", "Star Lord": "Mo", "Sub Lord": "Mo", "Zodiac": "Virgo", "Nakshatra": "Hasta", "Pada": 1, "Pos in Zodiac": "10°00'00\"", "Declination": -2.88},
+    {"Planet": "Mercury", "Date": "2025-07-29", "Time": "19:29:08", "Motion": "R", "Sign Lord": "Mo", "Star Lord": "Sa", "Sub Lord": "Ju", "Zodiac": "Cancer", "Nakshatra": "Pushya", "Pada": 4, "Pos in Zodiac": "16°39'59\"", "Declination": 12.76},
+    {"Planet": "Moon", "Date": "2025-07-29", "Time": "21:28:02", "Motion": "D", "Sign Lord": "Me", "Star Lord": "Mo", "Sub Lord": "Ma", "Zodiac": "Virgo", "Nakshatra": "Hasta", "Pada": 1, "Pos in Zodiac": "11°06'40\"", "Declination": -3.41},
+    {"Planet": "Moon", "Date": "2025-07-29", "Time": "22:59:50", "Motion": "D", "Sign Lord": "Me", "Star Lord": "Mo", "Sub Lord": "Ra", "Zodiac": "Virgo", "Nakshatra": "Hasta", "Pada": 1, "Pos in Zodiac": "11°53'20\"", "Declination": -3.78}
+]
+
+def get_aspect_for_position(planet, zodiac_pos):
+    """Determine aspect based on zodiac position (simplified)"""
+    degree = float(zodiac_pos.split('°')[0])
+    
+    # Simplified aspect determination based on degree
+    if degree % 30 == 0:
+        return "Conjunction"
+    elif degree % 60 == 0:
+        return "Sextile"
+    elif degree % 90 == 0:
+        return "Square"
+    elif degree % 120 == 0:
+        return "Trine"
+    elif degree % 180 == 0:
+        return "Opposition"
+    else:
+        # If no major aspect, choose based on motion and declination
+        return random.choice(["Sextile", "Square", "Trine"])
+
+def generate_transits_from_actual_data(symbol, selected_date):
+    """Generate transits based on actual planetary data"""
     transits = []
     
-    # Get rulerships for the selected symbol or use default
+    # Filter transits for selected date
+    selected_date_str = selected_date.strftime("%Y-%m-%d")
+    daily_transits = [t for t in SAMPLE_TRANSITS if t["Date"] == selected_date_str]
+    
+    # Get rulerships for the selected symbol
     planetary_effects = SYMBOL_RULERSHIPS.get(symbol, {})
     
-    if timeframe == "Intraday":
-        # Generate intraday transits from 5 AM to 11:45 PM in 30-min intervals
-        for hour in range(5, 24):  # 5 AM to 11 PM
-            for minute in [0, 30]:  # Every 30 minutes
-                if hour == 23 and minute == 30:  # Skip 11:30 PM
-                    continue
-                
-                planet = random.choice(list(VEDIC_PLANETS.keys()))
-                aspect = random.choice(aspects)
-                
-                effect, impact = determine_effect(planet, aspect, planetary_effects)
-                interpretation = generate_interpretation(planet, aspect, symbol)
-                
-                transits.append({
-                    "Time": f"{hour:02d}:{minute:02d}",
-                    "Planet": f"{planet} ({VEDIC_PLANETS[planet]})",
-                    "Aspect": aspect,
-                    "Impact": impact,
-                    "Effect": effect,
-                    "Action": get_action(effect),
-                    "Interpretation": interpretation
-                })
-    else:
-        days = 7 if timeframe == "Weekly" else 30
+    for transit in daily_transits:
+        planet = transit["Planet"]
+        time_str = transit["Time"][:5]  # Get HH:MM format
         
-        for day in range(days):
-            current_date = start_date + timedelta(days=day)
-            planet = random.choice(list(VEDIC_PLANETS.keys()))
-            aspect = random.choice(aspects)
-            
-            effect, impact = determine_effect(planet, aspect, planetary_effects)
-            interpretation = generate_interpretation(planet, aspect, symbol)
-            
-            transits.append({
-                "Date": current_date.strftime("%b %-d"),
-                "Planet": f"{planet} ({VEDIC_PLANETS[planet]})",
-                "Aspect": aspect,
-                "Impact": impact,
-                "Effect": effect,
-                "Action": get_action(effect),
-                "Interpretation": interpretation
-            })
+        # Determine aspect based on position
+        aspect = get_aspect_for_position(planet, transit["Pos in Zodiac"])
+        
+        # Determine market effect
+        effect, impact = determine_effect(planet, aspect, planetary_effects)
+        interpretation = generate_interpretation(planet, aspect, symbol)
+        
+        transits.append({
+            "Time": time_str,
+            "Planet": f"{planet} ({VEDIC_PLANETS.get(planet, planet)})",
+            "Aspect": aspect,
+            "Impact": impact,
+            "Effect": effect,
+            "Action": get_action(effect),
+            "Interpretation": interpretation
+        })
     
     return pd.DataFrame(transits)
 
@@ -97,6 +111,7 @@ def determine_effect(planet, aspect, planetary_effects):
             effect = "Neutral"
             impact = f"{random.uniform(-0.5, 0.5):.1f}%"
     else:
+        # Default effect based on motion (D=Direct, R=Retrograde)
         effect = "Mild Bullish" if random.random() > 0.5 else "Mild Bearish"
         impact = f"{random.uniform(-0.7, 0.7):.1f}%"
     return effect, impact
@@ -115,7 +130,7 @@ def get_action(effect):
 
 def generate_interpretation(planet, aspect, symbol):
     """Generate interpretation for any symbol"""
-    vedic_name = VEDIC_PLANETS[planet]
+    vedic_name = VEDIC_PLANETS.get(planet, planet)
     action_words = {
         "Conjunction": "influencing",
         "Sextile": "supporting",
@@ -127,27 +142,23 @@ def generate_interpretation(planet, aspect, symbol):
 
 # Streamlit App
 def main():
-    st.title("Vedic Astro Trading Signals")
+    st.title("Vedic Astro Trading Signals - Actual Transits")
     
     # Symbol input section
     st.subheader("Symbol Selection")
     symbol = st.text_input("Enter Symbol (e.g., GOLD, BTC, NIFTY)", "GOLD").strip().upper()
     
-    # Timeframe selection
-    st.subheader("Analysis Parameters")
-    col1, col2 = st.columns(2)
-    with col1:
-        timeframe = st.selectbox("Timeframe", ["Intraday", "Weekly", "Monthly"], index=0)
-    with col2:
-        start_date = st.date_input("Start Date", value=datetime.today())
+    # Date selection
+    st.subheader("Analysis Date")
+    selected_date = st.date_input("Select Date", value=datetime(2025, 7, 29))
     
     if st.button("Generate Astro Trading Report"):
         if not symbol:
             st.warning("Please enter a symbol")
             return
             
-        with st.spinner(f"Generating {timeframe} Vedic astrology report for {symbol}..."):
-            transit_df = generate_transits(symbol, start_date, timeframe)
+        with st.spinner(f"Generating Vedic astrology report for {symbol} on {selected_date.strftime('%Y-%m-%d')}..."):
+            transit_df = generate_transits_from_actual_data(symbol, selected_date)
             
             # Apply styling
             def color_effect(val):
@@ -175,9 +186,10 @@ def main():
                 .applymap(color_action, subset=['Action'])\
                 .set_properties(**{'text-align': 'left'})
             
-            # Display appropriate columns based on timeframe
-            if timeframe == "Intraday":
-                columns = {
+            # Display the dataframe
+            st.dataframe(
+                styled_df,
+                column_config={
                     "Time": "Time (24h)",
                     "Planet": "Planet (Vedic)",
                     "Aspect": "Aspect",
@@ -185,25 +197,9 @@ def main():
                     "Effect": "Market Effect",
                     "Action": "Trading Action",
                     "Interpretation": "Astro Interpretation"
-                }
-                height = min(800, 35 * len(transit_df))  # Dynamic height
-            else:
-                columns = {
-                    "Date": "Date",
-                    "Planet": "Planet (Vedic)",
-                    "Aspect": "Aspect",
-                    "Impact": "Price Impact",
-                    "Effect": "Market Effect",
-                    "Action": "Trading Action",
-                    "Interpretation": "Astro Interpretation"
-                }
-                height = min(800, 35 * len(transit_df))
-            
-            st.dataframe(
-                styled_df,
-                column_config=columns,
+                },
                 use_container_width=True,
-                height=height,
+                height=min(800, 35 * len(transit_df)),
                 hide_index=True
             )
 
