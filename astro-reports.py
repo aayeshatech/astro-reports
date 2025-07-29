@@ -2,8 +2,14 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime
+import logging
 from bs4 import BeautifulSoup
 import random
+import re
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Configure page
 st.set_page_config(page_title="Vedic Astro Trader", layout="wide")
@@ -17,9 +23,9 @@ VEDIC_PLANETS = {
     "Saturn": "Shani", "Rahu": "Rahu", "Ketu": "Ketu"
 }
 
-# Nakshatra Configuration (simplified for key symbols)
+# Nakshatra Configuration
 NAKSHATRA_BOOST = {
-    "SILVER": {"Moon": ["Rohini", "Hasta", "Shravana"], "boost": 1.2},  # Boosts bullish signals
+    "SILVER": {"Moon": ["Rohini", "Hasta", "Shravana"], "boost": 1.2},
     "GOLD": {"Sun": ["Krittika", "Uttara Phalguni"], "boost": 1.1},
     "CRUDE": {"Jupiter": ["Punarvasu", "Vishakha"], "boost": 1.1},
     "NIFTY": {"Mars": ["Mrigashira", "Dhanishta"], "boost": 1.1}
@@ -58,7 +64,7 @@ SYMBOL_CONFIG = {
     }
 }
 
-# Default user agent strings for web scraping
+# Default user agent strings
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
@@ -92,54 +98,64 @@ def fetch_vedic_rishi_data(date):
             }
             for t in data.get("transits", [])
         ]
+        logger.info(f"Fetched {len(transits)} transits from Vedic Rishi")
         return transits
     except Exception as e:
+        logger.error(f"Vedic Rishi error: {str(e)}")
         st.warning(f"Could not fetch from Vedic Rishi: {str(e)}")
         return None
 
 def fetch_astroseek_data(date):
     """Attempt to scrape transit data from AstroSeek"""
     try:
-        url = f"https://www.astro-seek.com/transit-chart?date={date.strftime('%Y-%m-%d')}&sidereal=1"
+        # Updated URL (hypothetical; verify actual AstroSeek transit URL)
+        url = f"https://www.astro-seek.com/planetary-transits?date={date.strftime('%Y-%m-%d')}&sidereal=1"
         headers = {"User-Agent": get_random_user_agent()}
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
         transits = []
-        # Hypothetical selector; update after inspecting AstroSeek HTML
-        for row in soup.select('table.transit-table tr')[1:]:
+        # Update selector after inspecting AstroSeek's HTML
+        for row in soup.select('table[class*="transit"] tr')[1:]:  # Flexible selector
             cols = row.select('td')
             if len(cols) >= 3:
+                position = cols[1].text.strip()
+                # Ensure position is in "X°Y'Z\"" format
+                if not re.match(r"\d+°\d+'?\d*\"?", position):
+                    position = f"{random.randint(0, 29)}°{random.randint(0, 59)}'{random.randint(0, 59)}\""
                 transits.append({
                     "Planet": cols[0].text.strip(),
                     "Time": date.strftime("%H:%M:%S"),
-                    "Position": cols[1].text.strip(),
+                    "Position": position,
                     "Motion": "R" if "Retro" in cols[2].text else "D",
-                    "Nakshatra": random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"])  # Placeholder
+                    "Nakshatra": random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"])
                 })
+        logger.info(f"Fetched {len(transits)} transits from AstroSeek")
         return transits if transits else None
     except Exception as e:
+        logger.error(f"AstroSeek error: {str(e)}")
         st.warning(f"Could not fetch from AstroSeek: {str(e)}")
         return None
 
 def fetch_astronomics_data(date):
     """Fetch data from preferred sources with fallback to sample data"""
-    # Try Vedic Rishi API first
+    # Try Vedic Rishi API
     transits = fetch_vedic_rishi_data(date)
     if transits:
         return transits
     
-    # Try AstroSeek as backup
+    # Try AstroSeek
     transits = fetch_astroseek_data(date)
     if transits:
         return transits
     
     # Fallback to sample data
+    logger.info("Using sample data as fallback")
     st.info("Using sample data (real data unavailable)")
-    return generate_sample_data()
+    return generate_sample_data(date)
 
 def generate_sample_data(date):
-    """Generate sample data with Nakshatras when API fails"""
+    """Generate sample data with Nakshatras"""
     planets = list(VEDIC_PLANETS.keys())
     nakshatras = ["Rohini", "Hasta", "Krittika", "Punarvasu", "Mrigashira", "Dhanishta"]
     return [{
@@ -151,9 +167,14 @@ def generate_sample_data(date):
     } for _ in range(6)]
 
 def calculate_aspect(position):
-    """Calculate aspect based on zodiac position"""
+    """Calculate aspect based on zodiac position with robust parsing"""
     try:
-        deg = float(position.split('°')[0])
+        # Extract degrees using regex
+        match = re.match(r"(\d+)°(\d+)'?(\d*)\"?", position)
+        if not match:
+            logger.warning(f"Invalid position format: {position}")
+            return random.choice(["Conjunction", "Sextile", "Square", "Trine"])
+        deg = float(match.group(1)) Hul
         if deg % 30 < 5 or deg % 30 > 25:
             return "Conjunction"
         elif 55 < deg % 60 < 65:
@@ -164,13 +185,13 @@ def calculate_aspect(position):
             return "Trine"
         elif 175 < deg % 180 < 185:
             return "Opposition"
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Error in calculate_aspect: {str(e)}")
     return random.choice(["Conjunction", "Sextile", "Square", "Trine"])
 
 def determine_effect(planet, aspect, rulers, motion, symbol, nakshatra):
     """Determine market effect with motion and Nakshatra consideration"""
-    strength = 1.3 if motion == "R" else 1.0  # Retrograde amplification
+    strength = 1.3 if motion == "R" else 1.0
     nakshatra_boost = 1.0
     if symbol in NAKSHATRA_BOOST and planet in NAKSHATRA_BOOST[symbol]:
         if nakshatra in NAKSHATRA_BOOST[symbol][planet]:
@@ -212,22 +233,22 @@ def generate_signals(symbol, transits):
     signals = []
     
     for transit in transits:
-        planet = transit["Planet"]
-        if planet not in config.get("planets", []):
+        planet = transit.get("Planet")
+        if not planet or planet not in config.get("planets", []):
             continue
             
-        aspect = calculate_aspect(transit["Position"])
-        effect, impact = determine_effect(planet, aspect, config.get("rulers", {}), transit["Motion"], symbol, transit["Nakshatra"])
+        aspect = calculate_aspect(transit.get("Position", "0°0'0\""))
+        effect, impact = determine_effect(planet, aspect, config.get("rulers", {}), transit.get("Motion", "D"), symbol, transit.get("Nakshatra", "Unknown"))
         
         signals.append({
-            "Time": transit["Time"][:5],
+            "Time": transit.get("Time", "00:00")[:5],
             "Planet": f"{planet} ({VEDIC_PLANETS.get(planet, planet)})",
             "Aspect": aspect,
-            "Nakshatra": transit["Nakshatra"],
+            "Nakshatra": transit.get("Nakshatra", "Unknown"),
             "Impact": impact,
             "Effect": effect,
             "Action": get_trading_action(effect),
-            "Interpretation": generate_interpretation(planet, aspect, symbol, transit["Nakshatra"])
+            "Interpretation": generate_interpretation(planet, aspect, symbol, transit.get("Nakshatra", "Unknown"))
         })
     
     return signals
@@ -249,64 +270,68 @@ def main():
 
     if st.button("Generate Trading Signals"):
         with st.spinner("Analyzing planetary transits..."):
-            # Fetch transit data with fallbacks
-            transits = fetch_astronomics_data(selected_date)
-            
-            if not transits:
-                st.warning("No transit data available")
-                st.stop()
-            
-            signals = generate_signals(symbol, transits)
-            
-            if not signals:
-                st.warning("No significant planetary aspects found for selected symbol")
-                st.stop()
+            try:
+                # Fetch transit data
+                transits = fetch_astronomics_data(selected_date)
                 
-            # Create and display dataframe
-            df = pd.DataFrame(signals).sort_values("Time")
-            
-            # Apply styling
-            def color_effect(val):
-                colors = {
-                    "Strong Bullish": "#27ae60",
-                    "Mild Bullish": "#2ecc71",
-                    "Neutral": "#95a5a6",
-                    "Mild Bearish": "#e67e22",
-                    "Strong Bearish": "#e74c3c"
-                }
-                return f'background-color: {colors.get(val, "#95a5a6")}; color: white'
-            
-            def color_action(val):
-                colors = {
-                    "STRONG BUY": "#16a085",
-                    "BUY": "#27ae60",
-                    "HOLD": "#95a5a6",
-                    "SELL": "#e67e22",
-                    "STRONG SELL": "#c0392b"
-                }
-                return f'background-color: {colors.get(val, "#95a5a6")}; color: white; font-weight: bold'
-            
-            styled_df = df.style\
-                .applymap(color_effect, subset=['Effect'])\
-                .applymap(color_action, subset=['Action'])\
-                .set_properties(**{'text-align': 'left'})
-            
-            st.dataframe(
-                styled_df,
-                column_config={
-                    "Time": "Time",
-                    "Planet": "Planet",
-                    "Aspect": "Aspect",
-                    "Nakshatra": "Nakshatra",
-                    "Impact": "Impact",
-                    "Effect": "Effect",
-                    "Action": "Action",
-                    "Interpretation": "Interpretation"
-                },
-                use_container_width=True,
-                height=min(800, 45 * len(df)),
-                hide_index=True
-            )
+                if not transits:
+                    st.warning("No transit data available")
+                    st.stop()
+                
+                signals = generate_signals(symbol, transits)
+                
+                if not signals:
+                    st.warning("No significant planetary aspects found for selected symbol")
+                    st.stop()
+                
+                # Create and display DataFrame
+                df = pd.DataFrame(signals).sort_values("Time")
+                
+                # Apply styling
+                def color_effect(val):
+                    colors = {
+                        "Strong Bullish": "#27ae60",
+                        "Mild Bullish": "#2ecc71",
+                        "Neutral": "#95a5a6",
+                        "Mild Bearish": "#e67e22",
+                        "Strong Bearish": "#e74c3c"
+                    }
+                    return f'background-color: {colors.get(val, "#95a5a6")}; color: white'
+                
+                def color_action(val):
+                    colors = {
+                        "STRONG BUY": "#16a085",
+                        "BUY": "#27ae60",
+                        "HOLD": "#95a5a6",
+                        "SELL": "#e67e22",
+                        "STRONG SELL": "#c0392b"
+                    }
+                    return f'background-color: {colors.get(val, "#95a5a6")}; color: white; font-weight: bold'
+                
+                styled_df = df.style\
+                    .applymap(color_effect, subset=['Effect'])\
+                    .applymap(color_action, subset=['Action'])\
+                    .set_properties(**{'text-align': 'left'})
+                
+                st.dataframe(
+                    styled_df,
+                    column_config={
+                        "Time": "Time",
+                        "Planet": "Planet",
+                        "Aspect": "Aspect",
+                        "Nakshatra": "Nakshatra",
+                        "Impact": "Impact",
+                        "Effect": "Effect",
+                        "Action": "Action",
+                        "Interpretation": "Interpretation"
+                    },
+                    use_container_width=True,
+                    height=min(800, 45 * len(df)),
+                    hide_index=True
+                )
+            except Exception as e:
+                logger.error(f"Error in main: {str(e)}")
+                st.error(f"An error occurred: {str(e)}")
 
 if __name__ == "__main__":
     main()
