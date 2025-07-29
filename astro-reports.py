@@ -4,6 +4,8 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, time as datetime_time
 import re
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # Vedic planet names mapping
 VEDIC_PLANETS = {
@@ -64,16 +66,29 @@ def fetch_monthly_astro_events(year, month):
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
-        r = requests.get(url, params=params, headers=headers, timeout=15)
+        session = requests.Session()
+        retries = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+        session.mount("https://", HTTPAdapter(max_retries=retries))
+        r = session.get(url, params=params, headers=headers, timeout=15)
         r.raise_for_status()
+
+        # Debug: Log raw HTML and URL
+        st.write("### Debugging Monthly Astro Events")
+        st.text(f"Requested URL: {r.url}")
+        st.text(f"Raw HTML (first 1000 chars):\n{r.text[:1000]}")
 
         soup = BeautifulSoup(r.text, "html.parser")
         rows = soup.select("table.table-striped tbody tr")
 
         if not rows:
             st.warning("No events found in the table. The website structure may have changed.")
-            return events
+            tables = soup.find_all("table")
+            table_classes = [table.get("class") for table in tables]
+            st.text(f"Found tables with classes: {table_classes}")
+            # Try alternative selector
+            rows = soup.select("table tbody tr")  # Fallback selector
 
+        date_formats = ["%b %d, %Y, %H:%M", "%B %d, %Y, %I:%M %p"]
         for tr in rows:
             tds = tr.find_all("td")
             if len(tds) < 3:
@@ -81,16 +96,23 @@ def fetch_monthly_astro_events(year, month):
             raw_date = tds[0].text.strip()
             event_name = tds[1].text.strip()
             details = tds[2].text.strip()
-            try:
-                dt = datetime.strptime(raw_date, "%b %d, %Y, %H:%M")
-                events.append({
-                    "datetime": dt,
-                    "name": event_name,
-                    "details": details
-                })
-            except ValueError as ve:
-                st.warning(f"Failed to parse date '{raw_date}': {ve}")
+            dt = None
+            for fmt in date_formats:
+                try:
+                    dt = datetime.strptime(raw_date, fmt)
+                    break
+                except ValueError:
+                    continue
+            if dt is None:
+                st.warning(f"Failed to parse date '{raw_date}'")
                 continue
+            event_data = {
+                "datetime": dt,
+                "name": event_name,
+                "details": details
+            }
+            events.append(event_data)
+            st.text(f"Extracted Event: {event_data}")
 
     except requests.exceptions.RequestException as e:
         st.warning(f"Network error while fetching monthly astro events: {e}")
@@ -107,6 +129,8 @@ def fetch_monthly_astro_events(year, month):
             "details": ""
         })
 
+    st.write("### Final Monthly Events")
+    st.json(events)
     return events
 
 def fetch_daily_aspects(date_selected):
@@ -118,45 +142,62 @@ def fetch_daily_aspects(date_selected):
     aspects = []
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=15)
+        session = requests.Session()
+        retries = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+        session.mount("https://", HTTPAdapter(max_retries=retries))
+        r = session.get(url, headers=headers, timeout=15)
         r.raise_for_status()
-        soup = BeautifulSoup(r.text, "html.parser")
 
+        # Debug: Log raw HTML and URL
+        st.write("### Debugging Daily Aspects")
+        st.text(f"Requested URL: {r.url}")
+        st.text(f"Raw HTML (first 1000 chars):\n{r.text[:1000]}")
+
+        soup = BeautifulSoup(r.text, "html.parser")
         rows = soup.select("table.table-striped tbody tr")
 
+        if not rows:
+            st.warning("No aspects found in the table. The website structure may have changed.")
+            tables = soup.find_all("table")
+            table_classes = [table.get("class") for table in tables]
+            st.text(f"Found tables with classes: {table_classes}")
+            rows = soup.select("table tbody tr")  # Fallback selector
+
+        date_formats = ["%b %d, %Y, %H:%M", "%B %d, %Y, %I:%M %p"]
         for tr in rows:
             tds = tr.find_all("td")
             if len(tds) < 6:
                 continue
-
             raw_date_time = tds[0].text.strip()
-            try:
-                dt = datetime.strptime(raw_date_time, "%b %d, %Y, %H:%M")
-            except:
+            dt = None
+            for fmt in date_formats:
+                try:
+                    dt = datetime.strptime(raw_date_time, fmt)
+                    break
+                except ValueError:
+                    continue
+            if dt is None:
+                st.warning(f"Failed to parse date '{raw_date_time}'")
                 continue
-
             if dt.date() != date_selected:
                 continue
-
-            planet1 = tds[1].text.strip()
-            aspect = tds[2].text.strip()
-            planet2 = tds[3].text.strip()
-            orb = tds[4].text.strip()
-            exact_time = tds[5].text.strip()
-
-            aspects.append({
+            aspect_data = {
                 "datetime": dt,
-                "planet1": planet1,
-                "aspect": aspect,
-                "planet2": planet2,
-                "orb": orb,
-                "exact_time": exact_time
-            })
+                "planet1": tds[1].text.strip(),
+                "aspect": tds[2].text.strip(),
+                "planet2": tds[3].text.strip(),
+                "orb": tds[4].text.strip(),
+                "exact_time": tds[5].text.strip()
+            }
+            aspects.append(aspect_data)
+            st.text(f"Extracted Aspect: {aspect_data}")
 
     except Exception as e:
         st.warning(f"Error fetching daily aspects: {e}")
-        return []
+        return aspects
 
+    st.write("### Final Daily Aspects")
+    st.json(aspects)
     return aspects
 
 def calculate_effect(planet, aspect, rulers, symbol, nakshatra):
@@ -242,7 +283,6 @@ def build_intraday_signals(symbol, aspects, monthly_events, user_start, user_end
             'end': nakshatra_events[i+1]['dt'],
             'nakshatra': nakshatra_events[i]['nakshatra']
         })
-    # Last segment till end of day
     if nakshatra_events:
         nakshatra_segments.append({
             'start': nakshatra_events[-1]['dt'],
@@ -250,7 +290,6 @@ def build_intraday_signals(symbol, aspects, monthly_events, user_start, user_end
             'nakshatra': nakshatra_events[-1]['nakshatra']
         })
     else:
-        # Fallback if no nakshatra events
         nakshatra_segments.append({
             'start': user_start,
             'end': user_end,
@@ -320,7 +359,6 @@ def main():
     with col2:
         selected_date = st.date_input("Select Date", value=datetime.today().date())
     with col3:
-        # Use datetime.time explicitly to avoid conflicts
         start_time = st.time_input("Select Start Time", value=datetime_time(0, 0))
         end_time = st.time_input("Select End Time", value=datetime_time(23, 59))
 
