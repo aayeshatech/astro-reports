@@ -22,6 +22,13 @@ nakshatras = [
 zodiac_signs = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"]
 houses = [f"House {i}" for i in range(1, 13)]
 
+# Planet weights for aspect strength
+planet_weights = {
+    "Sun": 1.5, "Moon": 1.3, "Mars": 1.2, "Mercury": 1.0,
+    "Jupiter": 1.4, "Venus": 1.1, "Saturn": 1.3,
+    "Rahu": 1.2, "Ketu": 1.2
+}
+
 # Function to calculate Nakshatra and Pada
 def get_nakshatra_pada(degree):
     for nak, start, end in nakshatras:
@@ -58,16 +65,22 @@ def get_planetary_positions(date_time):
         if planet == "Ketu":
             lon_sid = (lon_sid + 180) % 360
         sign, house = get_zodiac_house(lon_sid)
-        nak, pada = get_nakshatra_pada(lon_sid % 30 + (int(lon_sid // 30) * 30))
+        nak, pada = get_nakshatra_pada(lon_sid)  # Fixed this line
         is_retro = "N/A"
         if planet not in ["Rahu", "Ketu"]:
             result = swe.calc_ut(jd, pid)
             if len(result[0]) > 3:
                 is_retro = "Yes" if result[0][3] < 0 else "No"
+        
+        # Fixed degree calculation
+        degree_in_sign = lon_sid % 30
+        degree_int = int(degree_in_sign)
+        minute_int = int((degree_in_sign - degree_int) * 60)
+        
         positions.append({
             "Planet": planet,
             "Sign": sign,
-            "Degree": f"{int(lon_sid % 30)}° {int((lon_sid % 1) * 60)}'",
+            "Degree": f"{degree_int}° {minute_int}'",
             "House": house,
             "Nakshatra": nak,
             "Pada": pada,
@@ -76,37 +89,79 @@ def get_planetary_positions(date_time):
         })
     return pd.DataFrame(positions)
 
-# Function to calculate aspects
+# Function to calculate aspects with improved tolerance
 def get_aspects(positions):
     aspects = []
     planets = positions["Planet"].tolist()
     degrees = positions["Degree"].apply(lambda x: float(x.split('°')[0]) + float(x.split('°')[1].split("'")[0])/60)
+    
+    # Add the full longitude to each degree (sign * 30 + degree)
+    full_degrees = []
+    for i, planet in enumerate(planets):
+        sign_index = zodiac_signs.index(positions.iloc[i]["Sign"])
+        full_degree = sign_index * 30 + degrees[i]
+        full_degrees.append(full_degree)
+    
     for i, p1 in enumerate(planets[:-1]):
         for j, p2 in enumerate(planets[i+1:], start=i+1):
-            deg1 = degrees[i]
-            deg2 = degrees[j]
+            deg1 = full_degrees[i]
+            deg2 = full_degrees[j]
             diff = min((deg2 - deg1) % 360, (deg1 - deg2) % 360)
-            if diff < 1:  # Conjunction
-                aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Conjunction", "Degree": f"{diff:.2f}°"})
-            elif 59 < diff < 61:  # Sextile
-                aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Sextile", "Degree": f"{diff:.2f}°"})
-            elif 89 < diff < 91:  # Square
-                aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Square", "Degree": f"{diff:.2f}°"})
-            elif 119 < diff < 121:  # Trine
-                aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Trine", "Degree": f"{diff:.2f}°"})
+            
+            # Increased tolerance and added more aspects
+            weight = (planet_weights.get(p1, 1.0) + planet_weights.get(p2, 1.0)) / 2
+            
+            if diff < 3:  # Conjunction with 3° tolerance
+                aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Conjunction", 
+                               "Degree": f"{diff:.2f}°", "Weight": weight})
+            elif 57 < diff < 63:  # Sextile with 3° tolerance
+                aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Sextile", 
+                               "Degree": f"{diff:.2f}°", "Weight": weight})
+            elif 87 < diff < 93:  # Square with 3° tolerance
+                aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Square", 
+                               "Degree": f"{diff:.2f}°", "Weight": weight})
+            elif 117 < diff < 123:  # Trine with 3° tolerance
+                aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Trine", 
+                               "Degree": f"{diff:.2f}°", "Weight": weight})
+            elif 177 < diff < 183:  # Opposition with 3° tolerance
+                aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Opposition", 
+                               "Degree": f"{diff:.2f}°", "Weight": weight})
     return pd.DataFrame(aspects)
 
-# Function to determine strong buy/sell signals based on aspects
+# Improved function to determine trading signals
 def get_trading_signal(aspects):
-    is_bullish = any(aspect["Aspect"] in ["Trine", "Sextile"] for _, aspect in aspects.iterrows())
-    is_bearish = any(aspect["Aspect"] in ["Square", "Conjunction"] for _, aspect in aspects.iterrows())
-    if is_bullish and not is_bearish:
+    if aspects.empty:
+        return "Neutral", "gray"
+    
+    bullish_score = 0
+    bearish_score = 0
+    
+    for _, aspect in aspects.iterrows():
+        weight = aspect["Weight"]
+        if aspect["Aspect"] in ["Trine", "Sextile"]:
+            bullish_score += weight
+        elif aspect["Aspect"] in ["Square", "Opposition"]:
+            bearish_score += weight
+        elif aspect["Aspect"] == "Conjunction":
+            # Conjunction can be bullish or bearish depending on planets
+            if aspect["Planet1"] in ["Jupiter", "Venus"] or aspect["Planet2"] in ["Jupiter", "Venus"]:
+                bullish_score += weight * 0.8
+            elif aspect["Planet1"] in ["Mars", "Saturn", "Rahu", "Ketu"] or aspect["Planet2"] in ["Mars", "Saturn", "Rahu", "Ketu"]:
+                bearish_score += weight * 0.8
+    
+    # Determine signal based on scores
+    if bullish_score > bearish_score * 1.5:
         return "Strong Buy", "green"
-    elif is_bearish and not is_bullish:
+    elif bearish_score > bullish_score * 1.5:
         return "Strong Sell", "red"
+    elif bullish_score > bearish_score:
+        return "Buy", "lightgreen"
+    elif bearish_score > bullish_score:
+        return "Sell", "lightcoral"
     else:
-        return "Hold", "black"
+        return "Neutral", "gray"
 
+# Rest of your Streamlit app remains the same
 # Streamlit app
 st.title("Astro Market Analyzer")
 
@@ -133,7 +188,6 @@ with tab1:
     if not july_aspects.empty:
         st.subheader("July Aspects")
         st.dataframe(july_aspects)
-
     st.subheader(f"August {year} Transits")
     aug_transits = []
     for day in range(1, 32):  # Iterate through August days
