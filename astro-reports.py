@@ -5,13 +5,14 @@ from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 import re
 
-# PLANET/Nakshatra Configurations (same as yours)
+# --- CONFIGS ---
 VEDIC_PLANETS = {
     "Sun": "Surya", "Moon": "Chandra", "Mercury": "Budha",
     "Venus": "Shukra", "Mars": "Mangala", "Jupiter": "Guru",
     "Saturn": "Shani", "Rahu": "Rahu", "Ketu": "Ketu",
     "Uranus": "Uranus", "Neptune": "Neptune", "Pluto": "Pluto"
 }
+
 SYMBOL_CONFIG = {
     "GOLD": {
         "planets": ["Sun", "Venus", "Saturn"],
@@ -44,6 +45,7 @@ SYMBOL_CONFIG = {
         }
     }
 }
+
 NAKSHATRA_BOOST = {
     "SILVER": {"Moon": ["Rohini", "Hasta", "Shravana"], "boost": 1.2},
     "GOLD": {"Sun": ["Krittika", "Uttara Phalguni"], "boost": 1.1},
@@ -55,23 +57,20 @@ st.set_page_config(page_title="Vedic Astro Trader", layout="wide")
 st.title("🌌 Vedic Astro Trading Signals")
 st.markdown("### Intraday & Symbol Astro Analysis")
 
-@st.cache_data(show_spinner=False, ttl=3600)
+@st.cache_data(show_spinner=False, ttl=1800)
 def fetch_transits_for_date(target_date):
     url = "https://www.astroccult.net/transit_of_planets_planetary_events.html"
     resp = requests.get(url, timeout=10)
     soup = BeautifulSoup(resp.content, "html.parser")
-
-    # --- Parse Table ---
     table = soup.find("table", {"class": "tbltransit"})
     if not table:
         return []
-
+    # Parse astroccult event table:
     events = []
     for row in table.find_all("tr"):
         cols = [td.text.strip() for td in row.find_all("td")]
         if len(cols) < 3 or not re.search(r'\d{2}/\d{2}/\d{4}', " ".join(cols)):
             continue
-        # Ex: 'Moon Hasta 29/07/2025 19:27'
         m = re.search(r"([A-Za-z]+)\s+([A-Za-z]+)\s+(\d{2}/\d{2}/\d{4})\s+(\d{2}:\d{2})", cols[1])
         if not m:
             continue
@@ -79,25 +78,20 @@ def fetch_transits_for_date(target_date):
         dt = datetime.strptime(f"{d} {t}", "%d/%m/%Y %H:%M")
         events.append({"planet": planet, "nakshatra": nakshatra, "dt": dt})
 
-    # Extract only the Moon's Nakshatra periods that touch the target date
+    # Moon Nakshatra segments
     moon_nakshatra = [e for e in events if e["planet"].lower() == "moon"]
+    # Each interval is "from this event's dt to next moon's dt"
     segments = []
-    for i in range(len(moon_nakshatra)-1):
-        start, end = moon_nakshatra[i], moon_nakshatra[i+1]
-        # If target date falls between start and end
+    for i in range(len(moon_nakshatra) - 1):
+        start, end = moon_nakshatra[i], moon_nakshatra[i + 1]
         seg_start_date = start["dt"].date()
         seg_end_date = end["dt"].date()
-        # check if start or end covers target_date
         if seg_start_date <= target_date <= seg_end_date:
-            # clip to selected day boundaries
             seg_start = start["dt"] if seg_start_date == target_date else datetime.combine(target_date, datetime.min.time())
             seg_end = end["dt"] if seg_end_date == target_date else datetime.combine(target_date, datetime.max.time())
-            segments.append({
-                "start": seg_start,
-                "end": seg_end,
-                "nakshatra": start["nakshatra"]
-            })
-    # If only one segment on selected day (could happen at midnight)
+            segments.append({"start": seg_start, "end": seg_end, "nakshatra": start["nakshatra"]})
+
+    # If only one segment found, cover day with default
     if not segments and moon_nakshatra:
         for e in moon_nakshatra:
             if e["dt"].date() == target_date:
@@ -105,27 +99,26 @@ def fetch_transits_for_date(target_date):
     return segments
 
 def calculate_aspect_mock(planet, nakshatra, symbol):
-    # Dummy aspect assignment for demo (replace with more rules as needed)
-    # Alternate between Trine, Square, Conjunction each Nakshatra
-    code = hash((planet, nakshatra, symbol)) % 3
+    # Dummy: Alternate between Trine, Square, Conjunction
+    code = (abs(hash((planet, nakshatra, symbol))) % 3)
     return ["Trine", "Square", "Conjunction"][code]
 
 def determine_effect(planet, aspect, rulers, symbol, nakshatra):
     strength = 1.0
     nakshatra_boost = 1.0
-    # Special boost
+    # Apply boost
     if symbol in NAKSHATRA_BOOST and planet in NAKSHATRA_BOOST[symbol]:
         if nakshatra in NAKSHATRA_BOOST[symbol][planet]:
             nakshatra_boost = NAKSHATRA_BOOST[symbol]["boost"]
-    # Main aspect logic (just as in your function)
+
+    # Main aspect logic (adapt as needed)
     if planet in rulers:
         if aspect in rulers[planet].get("strong", []):
             return "Strong Bullish", f"+{1.2 * strength * nakshatra_boost:.1f}%"
         elif aspect in rulers[planet].get("weak", []):
             return "Strong Bearish", f"-{1.2 * strength / nakshatra_boost:.1f}%"
-    # Fallbacks
     if aspect == "Conjunction":
-        return "Strong Bullish", f"+{1.1*nakshatra_boost:.1f}%"
+        return "Strong Bullish", f"+{1.1 * nakshatra_boost:.1f}%"
     elif aspect == "Square":
         return "Strong Bearish", f"-1.0%"
     else:
@@ -157,8 +150,7 @@ def generate_interpretation(planet, aspect, symbol, nakshatra, with_planet=None)
 def generate_intraday_signals(symbol, moon_segments):
     config = SYMBOL_CONFIG[symbol]
     signals = []
-    planet = config["planets"][0]  # Use primary planet for this example
-    
+    planet = config["planets"][0]  # Use primary planet for demo (expand for more)
     for seg in moon_segments:
         seg_start_str = seg["start"].strftime("%H:%M")
         seg_end_str = seg["end"].strftime("%H:%M")
@@ -167,7 +159,7 @@ def generate_intraday_signals(symbol, moon_segments):
         effect, impact = determine_effect(planet, aspect, config["rulers"], symbol, nakshatra)
         if effect not in {"Strong Bullish", "Strong Bearish"}: continue
         signals.append({
-            "Segment": f"{seg_start_str} — {seg_end_str}",
+            "Time Window": f"{seg_start_str} — {seg_end_str}",
             "Planet": f"{planet} ({VEDIC_PLANETS.get(planet, '')})",
             "Aspect": aspect,
             "Nakshatra": nakshatra,
@@ -179,13 +171,12 @@ def generate_intraday_signals(symbol, moon_segments):
     return signals
 
 def main():
-    st.info("Vedic Astro Intraday Segments are powered by Moon Nakshatra changes. Only Strong Bullish/Bearish segments shown.")
+    st.info("Vedic Astro Intraday Segments powered by Moon Nakshatra. Only Strong Bullish/Bearish shown.")
     col1, col2 = st.columns(2)
     with col1:
         symbol = st.selectbox("Select Symbol", list(SYMBOL_CONFIG.keys()), index=0)
     with col2:
-        selected_date = st.date_input("Select Date", value=datetime(2025, 7, 29)).date()
-
+        selected_date = st.date_input("Select Date", value=datetime(2025, 7, 29))  # No .date()
     if st.button("Generate Intraday Signals"):
         with st.spinner("Fetching planetary transit data from Astroccult..."):
             moon_segs = fetch_transits_for_date(selected_date)
@@ -200,6 +191,14 @@ def main():
                     df.style.applymap(color_effect, subset=['Effect']).applymap(color_action, subset=['Action']).set_properties(**{'text-align': 'left'}),
                     use_container_width=True, hide_index=True
                 )
+                # Optional: add your tabs here
+                tabs = st.tabs(["Daily", "Weekly", "Monthly"])
+                with tabs[0]:
+                    st.write("Daily highlights: (customize this!)")
+                with tabs[1]:
+                    st.write("Weekly highlights: (customize this!)")
+                with tabs[2]:
+                    st.write("Monthly highlights: (customize this!)")
                 st.success("Signals generated for selected day and symbol. Only strong effect periods shown.")
             else:
                 st.warning("No strong bullish/bearish planetary events found for this date/symbol.")
