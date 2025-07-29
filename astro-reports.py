@@ -391,5 +391,11 @@ with tab2:
             st.plotly_chart(fig, use_container_width=True)
 
 # Instructions
-
+st.markdown("""
+### Instructions
+1. Install dependencies: `pip install -r requirements.txt` and `pip install pyswisseph`.
+2. Run the app: `streamlit run app.py`.
+3. Use the 'Planetary Report' tab to view monthly transits, starting with the first date of the month and highlighting nakshatra changes.
+4. Use the 'Stock Search' tab to input a stock symbol, date range with times, and analyze the intraday timeline with filtered aspects.
+5. Ensure Swiss Ephemeris data files are installed (see https://pyswisseph.readthedocs.io/en/latest/installation.html).
 """)
