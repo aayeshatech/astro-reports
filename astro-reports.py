@@ -1,9 +1,10 @@
-
+import streamlit as st
 import swisseph as swe
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
+
 # Nakshatra data
 nakshatras = [
     ("Ashwini", 0, 13+20/60), ("Bharani", 13+20/60, 26+40/60), ("Krittika", 26+40/60, 40),
@@ -16,15 +17,18 @@ nakshatras = [
     ("Shravana", 280, 293+20/60), ("Dhanishta", 293+20/60, 306+40/60), ("Shatabhisha", 306+40/60, 320),
     ("Purva Bhadrapada", 320, 333+20/60), ("Uttara Bhadrapada", 333+20/60, 346+40/60), ("Revati", 346+40/60, 360)
 ]
+
 # Zodiac signs and houses
 zodiac_signs = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"]
 houses = [f"House {i}" for i in range(1, 13)]
+
 # Planet weights for aspect strength
 planet_weights = {
     "Sun": 1.5, "Moon": 1.3, "Mars": 1.2, "Mercury": 1.0,
     "Jupiter": 1.4, "Venus": 1.1, "Saturn": 1.3,
     "Rahu": 1.2, "Ketu": 1.2
 }
+
 # Function to calculate Nakshatra and Pada
 def get_nakshatra_pada(degree):
     for nak, start, end in nakshatras:
@@ -32,11 +36,13 @@ def get_nakshatra_pada(degree):
             pada = int((degree - start) // (13+20/60 / 4)) + 1
             return nak, pada
     return "Unknown", 0
+
 # Function to get zodiac sign and house
 def get_zodiac_house(degree):
     sign_index = int(degree // 30) % 12
     house_index = int(degree // 30) % 12
     return zodiac_signs[sign_index], houses[house_index]
+
 # Function to calculate planetary positions
 def get_planetary_positions(date_time):
     utc_offset = 5.5  # IST is UTC+5:30
@@ -82,6 +88,7 @@ def get_planetary_positions(date_time):
             "Date": date_time.strftime("%Y-%m-%d %H:%M IST")
         })
     return pd.DataFrame(positions)
+
 # Function to calculate aspects with improved tolerance
 def get_aspects(positions):
     aspects = []
@@ -120,6 +127,7 @@ def get_aspects(positions):
                 aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Opposition", 
                                "Degree": f"{diff:.2f}°", "Weight": weight})
     return pd.DataFrame(aspects)
+
 # Improved function to determine trading signals
 def get_trading_signal(aspects):
     if aspects.empty:
@@ -152,6 +160,7 @@ def get_trading_signal(aspects):
         return "Sell", "lightcoral", bullish_score, bearish_score
     else:
         return "Neutral", "gray", bullish_score, bearish_score
+
 # Function to get significant transits (changes in planetary positions)
 def get_significant_transits(current_positions, previous_positions=None):
     if previous_positions is None:
@@ -189,10 +198,13 @@ def get_significant_transits(current_positions, previous_positions=None):
             significant_changes.append(f"{planet} in {current_row['Sign']} {current_row['Degree']}")
     
     return significant_changes if significant_changes else ["No significant changes"]
+
 # Streamlit app
 st.title("Astro Market Analyzer")
+
 # Tabs
 tab1, tab2 = st.tabs(["Planetary Report", "Stock Search"])
+
 # Planetary Report Tab
 with tab1:
     st.header("Planetary Transits Report")
@@ -213,6 +225,7 @@ with tab1:
     if not july_aspects.empty:
         st.subheader("July Aspects")
         st.dataframe(july_aspects)
+    
     st.subheader(f"August {year} Transits")
     aug_transits = []
     for day in range(1, 32):  # Iterate through August days
@@ -228,6 +241,7 @@ with tab1:
     if not aug_aspects.empty:
         st.subheader("August Aspects")
         st.dataframe(aug_aspects)
+
 # Stock Search Tab
 with tab2:
     st.header("Stock Search")
@@ -236,6 +250,7 @@ with tab2:
     start_time = st.time_input("Start Time (IST)", datetime(2025, 7, 29, 9, 15).time())  # Market open time
     end_date = st.date_input("End Date", datetime(2025, 7, 29))
     end_time = st.time_input("End Time (IST)", datetime(2025, 7, 29, 15, 30).time())  # Market close time
+    
     if st.button("Search"):
         start_datetime = datetime.combine(start_date, start_time)
         end_datetime = datetime.combine(end_date, end_time)
@@ -276,8 +291,24 @@ with tab2:
             
             timeline_df = pd.DataFrame(timeline)
             
-            # Style the Signal column with color
-            styled_df = timeline_df.style.apply(lambda x: ['color: {}'.format(x.Color) for _ in x], axis=1, subset=['Signal'])
+            # Create a copy of the DataFrame for display
+            display_df = timeline_df.drop(columns=['Color'])
+            
+            # Define a function to map signal values to colors
+            def color_signal(val):
+                if val == "Strong Buy":
+                    return 'color: green'
+                elif val == "Buy":
+                    return 'color: lightgreen'
+                elif val == "Strong Sell":
+                    return 'color: red'
+                elif val == "Sell":
+                    return 'color: lightcoral'
+                else:
+                    return 'color: gray'
+            
+            # Apply the styling
+            styled_df = display_df.style.applymap(color_signal, subset=['Signal'])
             
             # Display the dataframe
             st.dataframe(styled_df)
@@ -310,6 +341,7 @@ with tab2:
             )
             
             st.plotly_chart(fig, use_container_width=True)
+
 # Instructions
 st.markdown("""
 ### Instructions
