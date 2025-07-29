@@ -32,7 +32,7 @@ def get_nakshatra_pada(degree):
 # Function to get zodiac sign
 def get_zodiac_sign(degree):
     sign_index = int(degree // 30)
-    return zodiac_signs[sign_index % 12]  # Ensure cycling through 12 signs
+    return zodiac_signs[sign_index % 12]
 
 # Function to calculate planetary positions
 @st.cache_data
@@ -44,7 +44,7 @@ def get_planetary_positions(date_time, location="New Delhi"):
         jd = swe.julday(utc_datetime.year, utc_datetime.month, utc_datetime.day, 
                        utc_datetime.hour + utc_datetime.minute/60.0 + utc_datetime.second/3600.0)
         
-        # Set sidereal mode (Lahiri Ayanamsa) and get Ayanamsa for debugging
+        # Set sidereal mode (Lahiri Ayanamsa) and get Ayanamsa
         swe.set_sid_mode(swe.SIDM_LAHIRI)
         ayanamsa = swe.get_ayanamsa_ut(jd)
         st.write(f"Debug: Ayanamsa at {jd} = {ayanamsa:.2f}°")
@@ -58,19 +58,27 @@ def get_planetary_positions(date_time, location="New Delhi"):
         
         positions = []
         for planet, pid in planets.items():
-            lon = swe.calc_ut(jd, pid)[0][0]
+            # Get tropical longitude
+            lon_trop = swe.calc_ut(jd, pid)[0][0]
+            # Apply Ayanamsa manually for sidereal longitude
+            lon_sid = (lon_trop - ayanamsa) % 360
             if planet == "Ketu":
-                lon = (lon + 180) % 360  # Ketu is opposite Rahu
-            sign = get_zodiac_sign(lon)
-            nak, pada = get_nakshatra_pada(lon % 30 + (int(lon // 30) * 30))
+                lon_sid = (lon_sid + 180) % 360  # Ketu is opposite Rahu
+            
+            sign = get_zodiac_sign(lon_sid)
+            nak, pada = get_nakshatra_pada(lon_sid % 30 + (int(lon_sid // 30) * 30))
             positions.append({
                 "Planet": planet,
                 "Sign": sign,
-                "Degree": f"{int(lon % 30)}° {int((lon % 1) * 60)}'",
+                "Degree": f"{int(lon_sid % 30)}° {int((lon_sid % 1) * 60)}'",
                 "Nakshatra": nak,
                 "Pada": pada,
-                "Longitude": lon
+                "Tropical Longitude": lon_trop,
+                "Sidereal Longitude": lon_sid
             })
+            # Debug for Saturn
+            if planet == "Saturn":
+                st.write(f"Debug: Saturn - Tropical: {lon_trop:.2f}°, Sidereal: {lon_sid:.2f}°, Ayanamsa: {ayanamsa:.2f}°")
         
         return pd.DataFrame(positions)
     except Exception as e:
@@ -84,7 +92,7 @@ def create_polar_chart(df):
     fig = go.Figure()
     fig.add_trace(go.Scatterpolar(
         r=[1] * len(df),
-        theta=df["Longitude"],
+        theta=df["Sidereal Longitude"],
         text=df["Planet"],
         mode="markers+text",
         marker=dict(size=10, color="#FF6347", line=dict(width=2, color="#FFFFFF")),
@@ -117,7 +125,7 @@ st.title("Vedic Astrology Transit Calculator")
 with st.form("transit_form"):
     date = st.date_input("Select Date", value=datetime.date(2025, 7, 29))
     start_time = st.time_input("Start Time (IST)", value=datetime.time(21, 29))
-    end_time = st.time_input("End Time (IST)", value=datetime.time(21, 45))  # Adjusted to 09:45 PM IST
+    end_time = st.time_input("End Time (IST)", value=datetime.time(21, 45))
     location = st.text_input("Location", value="New Delhi")
     submit = st.form_submit_button("Calculate Transits")
 
@@ -177,6 +185,6 @@ st.markdown("""
 1. Install dependencies: `pip install -r requirements.txt` and `pip install pyswisseph`.
 2. Run the app: `streamlit run script.py`.
 3. Enter the date, start time, end time, and location, then click 'Calculate Transits'.
-4. If no results appear, check the terminal for error messages or ensure `pyswisseph` is installed with ephemeris data[](https://pyswisseph.readthedocs.io/en/latest/installation.html).
-5. Verify Ayanamsa value in the debug output matches ~24° for 2025.
+4. If Saturn remains in Aries, check the debug output for tropical and sidereal longitudes.
+5. Ensure Swiss Ephemeris data files are installed[](https://pyswisseph.readthedocs.io/en/latest/installation.html).
 """)
