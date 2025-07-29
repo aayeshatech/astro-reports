@@ -1,3 +1,4 @@
+```python
 import streamlit as st
 import swisseph as swe
 import pandas as pd
@@ -91,6 +92,8 @@ def get_planetary_positions(date_time):
             nak = pos["nakshatra"]
             pada = 1  # Simplified for almanac data
             is_retro = pos["retro"]
+            # Calculate house for almanac data
+            _, house = get_zodiac_house(lon_sid)
         else:
             lon_trop = swe.calc_ut(jd, pid)[0][0]
             lon_sid = (lon_trop - ayanamsa) % 360
@@ -540,3 +543,4 @@ st.markdown("""
 4. Use the 'Stock Search' tab to input a stock symbol, date range with times, and analyze the intraday timeline with updated planetary positions and astro aspect-based signals.
 5. Ensure Swiss Ephemeris data files are installed (see https://pyswisseph.readthedocs.io/en/latest/installation.html).
 """)
+```
