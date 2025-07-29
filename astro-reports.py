@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import swisseph as swe
 import pandas as pd
