@@ -105,36 +105,34 @@ def fetch_vedic_rishi_data(date):
         st.warning(f"Could not fetch from Vedic Rishi: {str(e)}")
         return None
 
-def fetch_astroseek_data(date):
-    """Attempt to scrape transit data from AstroSeek"""
+def fetch_drik_panchang_data(date):
+    """Attempt to scrape transit data from Drik Panchang"""
     try:
-        # Updated URL (hypothetical; verify actual AstroSeek transit URL)
-        url = f"https://www.astro-seek.com/planetary-transits?date={date.strftime('%Y-%m-%d')}&sidereal=1"
+        url = f"https://www.drikpanchang.com/panchang/day-panchang.html?date={date.strftime('%d/%m/%Y')}"
         headers = {"User-Agent": get_random_user_agent()}
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
         transits = []
-        # Update selector after inspecting AstroSeek's HTML
-        for row in soup.select('table[class*="transit"] tr')[1:]:  # Flexible selector
+        # Update selector based on Drik Panchang's HTML (inspect at https://www.drikpanchang.com/)
+        for row in soup.select('table[class*="dpPanchangTable"] tr')[1:]:
             cols = row.select('td')
-            if len(cols) >= 3:
+            if len(cols) >= 4:
                 position = cols[1].text.strip()
-                # Ensure position is in "X°Y'Z\"" format
                 if not re.match(r"\d+°\d+'?\d*\"?", position):
                     position = f"{random.randint(0, 29)}°{random.randint(0, 59)}'{random.randint(0, 59)}\""
                 transits.append({
                     "Planet": cols[0].text.strip(),
                     "Time": date.strftime("%H:%M:%S"),
                     "Position": position,
-                    "Motion": "R" if "Retro" in cols[2].text else "D",
-                    "Nakshatra": random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"])
+                    "Motion": "R" if "Retrograde" in cols[2].text else "D",
+                    "Nakshatra": cols[3].text.strip() if len(cols) > 3 else random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"])
                 })
-        logger.info(f"Fetched {len(transits)} transits from AstroSeek")
+        logger.info(f"Fetched {len(transits)} transits from Drik Panchang")
         return transits if transits else None
     except Exception as e:
-        logger.error(f"AstroSeek error: {str(e)}")
-        st.warning(f"Could not fetch from AstroSeek: {str(e)}")
+        logger.error(f"Drik Panchang error: {str(e)}")
+        st.warning(f"Could not fetch from Drik Panchang: {str(e)}")
         return None
 
 def fetch_astronomics_data(date):
@@ -144,8 +142,8 @@ def fetch_astronomics_data(date):
     if transits:
         return transits
     
-    # Try AstroSeek
-    transits = fetch_astroseek_data(date)
+    # Try Drik Panchang
+    transits = fetch_drik_panchang_data(date)
     if transits:
         return transits
     
@@ -169,7 +167,6 @@ def generate_sample_data(date):
 def calculate_aspect(position):
     """Calculate aspect based on zodiac position with robust parsing"""
     try:
-        # Extract degrees using regex
         match = re.match(r"(\d+)°(\d+)'?(\d*)\"?", position)
         if not match:
             logger.warning(f"Invalid position format: {position}")
