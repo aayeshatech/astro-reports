@@ -4,7 +4,6 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import datetime
-from dateutil import parser
 
 # Nakshatra data
 nakshatras = [
@@ -36,10 +35,13 @@ def get_zodiac_sign(degree):
     return zodiac_signs[sign_index]
 
 # Function to calculate planetary positions
+@st.cache_data
 def get_planetary_positions(date_time, location="New Delhi"):
     try:
-        # Convert date and time to Julian day
-        jd = swe.julday(date_time.year, date_time.month, date_time.day, date_time.hour + date_time.minute/60.0)
+        # Convert to UTC for Swiss Ephemeris (IST is UTC+5:30)
+        utc_offset = 5.5  # Hours
+        utc_datetime = date_time - datetime.timedelta(hours=utc_offset)
+        jd = swe.julday(utc_datetime.year, utc_datetime.month, utc_datetime.day, utc_datetime.hour + utc_datetime.minute/60.0)
         
         # Set sidereal mode (Lahiri Ayanamsa)
         swe.set_sid_mode(swe.SIDM_LAHIRI)
@@ -53,7 +55,6 @@ def get_planetary_positions(date_time, location="New Delhi"):
         
         positions = []
         for planet, pid in planets.items():
-            # Calculate position
             lon = swe.calc_ut(jd, pid)[0][0]
             if planet == "Ketu":
                 lon = (lon + 180) % 360  # Ketu is opposite Rahu
@@ -65,7 +66,7 @@ def get_planetary_positions(date_time, location="New Delhi"):
                 "Degree": f"{int(lon % 30)}° {int((lon % 1) * 60)}'",
                 "Nakshatra": nak,
                 "Pada": pada,
-                "Longitude": lon  # For plotting
+                "Longitude": lon
             })
         
         return pd.DataFrame(positions)
@@ -75,15 +76,15 @@ def get_planetary_positions(date_time, location="New Delhi"):
 
 # Function to create a polar chart
 def create_polar_chart(df):
-    if df is None:
+    if df is None or df.empty:
         return None
     fig = go.Figure()
     fig.add_trace(go.Scatterpolar(
-        r=[1] * len(df),  # Radial distance (fixed at 1 for visibility)
+        r=[1] * len(df),
         theta=df["Longitude"],
         text=df["Planet"],
         mode="markers+text",
-        marker=dict(size=10),
+        marker=dict(size=10, color="#FF6347", line=dict(width=2, color="#FFFFFF")),
         textposition="middle right"
     ))
     fig.update_layout(
@@ -92,12 +93,17 @@ def create_polar_chart(df):
                 tickvals=list(range(0, 360, 30)),
                 ticktext=zodiac_signs,
                 rotation=90,
-                direction="clockwise"
+                direction="clockwise",
+                gridcolor="#D3D3D3"
             ),
-            radialaxis=dict(visible=False)
+            radialaxis=dict(visible=False),
+            bgcolor="#2F2F2F"
         ),
         showlegend=False,
-        title="Planetary Positions in Zodiac"
+        title="Planetary Positions in Zodiac",
+        paper_bgcolor="#1F1F1F",
+        font=dict(color="#FFFFFF"),
+        margin=dict(t=50, b=50, l=50, r=50)
     )
     return fig
 
@@ -108,7 +114,7 @@ st.title("Vedic Astrology Transit Calculator")
 with st.form("transit_form"):
     date = st.date_input("Select Date", value=datetime.date(2025, 7, 29))
     start_time = st.time_input("Start Time (IST)", value=datetime.time(21, 29))
-    end_time = st.time_input("End Time (IST)", value=datetime.time(23, 59))
+    end_time = st.time_input("End Time (IST)", value=datetime.time(21, 40))  # Adjusted to 09:40 PM IST
     location = st.text_input("Location", value="New Delhi")
     submit = st.form_submit_button("Calculate Transits")
 
@@ -127,34 +133,38 @@ if submit:
             st.subheader(f"Transits at {start_datetime} IST ({location})")
             df_start = get_planetary_positions(start_datetime, location)
             
-            if df_start is not None:
+            if df_start is not None and not df_start.empty:
                 st.dataframe(df_start[["Planet", "Sign", "Degree", "Nakshatra", "Pada"]])
                 
                 # Plot polar chart
                 st.subheader("Zodiac Visualization")
                 fig = create_polar_chart(df_start)
                 if fig:
-                    st.plotly_chart(fig)
+                    st.plotly_chart(fig, use_container_width=True)
                 
                 # Calculate positions for end time
                 st.subheader(f"Transits at {end_datetime} IST ({location})")
                 df_end = get_planetary_positions(end_datetime, location)
                 
-                if df_end is not None:
+                if df_end is not None and not df_end.empty:
                     st.dataframe(df_end[["Planet", "Sign", "Degree", "Nakshatra", "Pada"]])
                     
-                    # Highlight changes
+                    # Check for changes
+                    st.subheader("Changes During the Period")
                     changes = df_start.merge(df_end, on="Planet", suffixes=("_start", "_end"))
-                    changes = changes[changes["Sign_start"] != changes["Sign_end"] | 
-                                    changes["Nakshatra_start"] != changes["Nakshatra_end"] | 
-                                    changes["Pada_start"] != changes["Pada_end"]]
+                    condition = ((changes["Sign_start"] != changes["Sign_end"]) |
+                                 (changes["Nakshatra_start"] != changes["Nakshatra_end"]) |
+                                 (changes["Pada_start"] != changes["Pada_end"]))
+                    changes = changes[condition]
+                    
                     if not changes.empty:
-                        st.subheader("Changes During the Period")
                         st.dataframe(changes[["Planet", "Sign_start", "Sign_end", "Nakshatra_start", "Nakshatra_end", "Pada_start", "Pada_end"]])
                     else:
                         st.write("No significant changes in sign, Nakshatra, or Pada during the period.")
+                else:
+                    st.error("Failed to calculate end time transits.")
             else:
-                st.error("Failed to calculate transits. Please check inputs or dependencies.")
+                st.error("Failed to calculate start time transits. Check if pyswisseph is installed correctly.")
     except Exception as e:
         st.error(f"Error processing inputs: {str(e)}")
 
@@ -164,5 +174,5 @@ st.markdown("""
 1. Install dependencies: `pip install -r requirements.txt` and `pip install pyswisseph`.
 2. Run the app: `streamlit run script.py`.
 3. Enter the date, start time, end time, and location, then click 'Calculate Transits'.
-4. If no results appear, check the terminal for error messages or ensure `pyswisseph` is installed.
+4. If no results appear, check the terminal for error messages or ensure `pyswisseph` is installed with ephemeris data[](https://pyswisseph.readthedocs.io/en/latest/installation.html).
 """)
