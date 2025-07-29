@@ -174,7 +174,7 @@ def calculate_aspect(position):
         if not match:
             logger.warning(f"Invalid position format: {position}")
             return random.choice(["Conjunction", "Sextile", "Square", "Trine"])
-        deg = float(match.group(1)) Hul
+        deg = float(match.group(1))
         if deg % 30 < 5 or deg % 30 > 25:
             return "Conjunction"
         elif 55 < deg % 60 < 65:
