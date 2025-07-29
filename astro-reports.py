@@ -47,7 +47,10 @@ SAMPLE_TRANSITS = [
 
 def get_aspect_for_position(planet, zodiac_pos):
     """Determine aspect based on zodiac position (simplified)"""
-    degree = float(zodiac_pos.split('°')[0])
+    try:
+        degree = float(zodiac_pos.split('°')[0])
+    except:
+        degree = random.randint(0, 30)
     
     # Simplified aspect determination based on degree
     if degree % 30 == 0:
@@ -68,9 +71,15 @@ def generate_transits_from_actual_data(symbol, selected_date):
     """Generate transits based on actual planetary data"""
     transits = []
     
-    # Filter transits for selected date
+    # Convert selected_date to string format matching sample data
     selected_date_str = selected_date.strftime("%Y-%m-%d")
+    
+    # Filter transits for selected date
     daily_transits = [t for t in SAMPLE_TRANSITS if t["Date"] == selected_date_str]
+    
+    if not daily_transits:
+        st.warning(f"No transit data available for {selected_date_str}")
+        return pd.DataFrame()
     
     # Get rulerships for the selected symbol
     planetary_effects = SYMBOL_RULERSHIPS.get(symbol, {})
@@ -148,7 +157,7 @@ def main():
     st.subheader("Symbol Selection")
     symbol = st.text_input("Enter Symbol (e.g., GOLD, BTC, NIFTY)", "GOLD").strip().upper()
     
-    # Date selection
+    # Date selection - default to date we have sample data for
     st.subheader("Analysis Date")
     selected_date = st.date_input("Select Date", value=datetime(2025, 7, 29))
     
@@ -159,6 +168,10 @@ def main():
             
         with st.spinner(f"Generating Vedic astrology report for {symbol} on {selected_date.strftime('%Y-%m-%d')}..."):
             transit_df = generate_transits_from_actual_data(symbol, selected_date)
+            
+            if transit_df.empty:
+                st.warning("No transit data available for the selected date")
+                return
             
             # Apply styling
             def color_effect(val):
@@ -181,27 +194,32 @@ def main():
                 }
                 return f'background-color: {colors.get(val, "#95A5A6")}; color: white; font-weight: bold'
             
-            styled_df = transit_df.style\
-                .applymap(color_effect, subset=['Effect'])\
-                .applymap(color_action, subset=['Action'])\
-                .set_properties(**{'text-align': 'left'})
-            
-            # Display the dataframe
-            st.dataframe(
-                styled_df,
-                column_config={
-                    "Time": "Time (24h)",
-                    "Planet": "Planet (Vedic)",
-                    "Aspect": "Aspect",
-                    "Impact": "Price Impact",
-                    "Effect": "Market Effect",
-                    "Action": "Trading Action",
-                    "Interpretation": "Astro Interpretation"
-                },
-                use_container_width=True,
-                height=min(800, 35 * len(transit_df)),
-                hide_index=True
-            )
+            try:
+                styled_df = transit_df.style\
+                    .applymap(color_effect, subset=['Effect'])\
+                    .applymap(color_action, subset=['Action'])\
+                    .set_properties(**{'text-align': 'left'})
+                
+                # Display the dataframe
+                st.dataframe(
+                    styled_df,
+                    column_config={
+                        "Time": "Time (24h)",
+                        "Planet": "Planet (Vedic)",
+                        "Aspect": "Aspect",
+                        "Impact": "Price Impact",
+                        "Effect": "Market Effect",
+                        "Action": "Trading Action",
+                        "Interpretation": "Astro Interpretation"
+                    },
+                    use_container_width=True,
+                    height=min(800, 35 * len(transit_df)),
+                    hide_index=True
+                )
+            except Exception as e:
+                st.error(f"Error displaying data: {str(e)}")
+                st.write("Raw data for debugging:")
+                st.write(transit_df)
 
 if __name__ == "__main__":
     main()
