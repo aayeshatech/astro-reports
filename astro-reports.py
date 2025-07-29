@@ -75,36 +75,6 @@ def get_random_user_agent():
     """Return a random user agent for web requests"""
     return random.choice(USER_AGENTS)
 
-def fetch_vedic_rishi_data(date):
-    """Attempt to fetch transit data from Vedic Rishi API"""
-    try:
-        url = "https://api.vedicrishiastro.com/v1/transit_planets"
-        payload = {
-            "date": date.strftime('%Y-%m-%d'),
-            "timezone": "Asia/Kolkata",
-            "api_key": "your_api_key"  # Replace with actual Vedic Rishi API key
-        }
-        headers = {"User-Agent": get_random_user_agent()}
-        response = requests.post(url, data=payload, headers=headers, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        transits = [
-            {
-                "Planet": t["planet"],
-                "Time": date.strftime("%H:%M:%S"),
-                "Position": f"{int(t['degree'])}°{int((t['degree'] % 1) * 60)}'{int((t['degree'] % 1) * 3600) % 60}\"",
-                "Motion": "R" if t.get("retrograde", False) else "D",
-                "Nakshatra": t.get("nakshatra", random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"]))
-            }
-            for t in data.get("transits", [])
-        ]
-        logger.info(f"Fetched {len(transits)} transits from Vedic Rishi")
-        return transits
-    except Exception as e:
-        logger.error(f"Vedic Rishi error: {str(e)}")
-        st.warning(f"Could not fetch from Vedic Rishi: {str(e)}")
-        return None
-
 def fetch_drik_panchang_data(date):
     """Attempt to scrape transit data from Drik Panchang"""
     try:
@@ -136,12 +106,7 @@ def fetch_drik_panchang_data(date):
         return None
 
 def fetch_astronomics_data(date):
-    """Fetch data from preferred sources with fallback to sample data"""
-    # Try Vedic Rishi API
-    transits = fetch_vedic_rishi_data(date)
-    if transits:
-        return transits
-    
+    """Fetch data from Drik Panchang with fallback to sample data"""
     # Try Drik Panchang
     transits = fetch_drik_panchang_data(date)
     if transits:
