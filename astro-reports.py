@@ -75,6 +75,32 @@ def get_random_user_agent():
     """Return a random user agent for web requests"""
     return random.choice(USER_AGENTS)
 
+def fetch_astronomics_ai_data(date):
+    """Attempt to fetch transit data from https://data.astronomics.ai/almanac/"""
+    try:
+        url = "https://data.astronomics.ai/almanac/"
+        headers = {"User-Agent": get_random_user_agent()}
+        # Placeholder: Assumes JSON API; update based on actual API documentation
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        transits = [
+            {
+                "Planet": t["planet"],
+                "Time": date.strftime("%H:%M:%S"),
+                "Position": f"{int(t['degree'])}°{int((t['degree'] % 1) * 60)}'{int((t['degree'] % 1) * 3600) % 60}\"",
+                "Motion": "R" if t.get("retrograde", False) else "D",
+                "Nakshatra": t.get("nakshatra", random.choice(["Rohini", "Hasta", "Krittika", "Punarvasu"]))
+            }
+            for t in data.get("transits", [])
+        ]
+        logger.info(f"Fetched {len(transits)} transits from Astronomics AI")
+        return transits if transits else None
+    except Exception as e:
+        logger.error(f"Astronomics AI error: {str(e)}")
+        st.warning(f"Could not fetch from Astronomics AI: {str(e)}")
+        return None
+
 def fetch_drik_panchang_data(date):
     """Attempt to scrape transit data from Drik Panchang"""
     try:
@@ -84,7 +110,7 @@ def fetch_drik_panchang_data(date):
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
         transits = []
-        # Update selector based on Drik Panchang's HTML (inspect at https://www.drikpanchang.com/)
+        # Update selector based on Drik Panchang's HTML
         for row in soup.select('table[class*="dpPanchangTable"] tr')[1:]:
             cols = row.select('td')
             if len(cols) >= 4:
@@ -106,7 +132,12 @@ def fetch_drik_panchang_data(date):
         return None
 
 def fetch_astronomics_data(date):
-    """Fetch data from Drik Panchang with fallback to sample data"""
+    """Fetch data from Astronomics AI with fallback to Drik Panchang and sample data"""
+    # Try Astronomics AI
+    transits = fetch_astronomics_ai_data(date)
+    if transits:
+        return transits
+    
     # Try Drik Panchang
     transits = fetch_drik_panchang_data(date)
     if transits:
