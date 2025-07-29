@@ -66,7 +66,7 @@ def get_zodiac_house(degree):
     house_index = int(degree // 30) % 12
     return zodiac_signs[sign_index], houses[house_index]
 
-# Function to calculate planetary positions with intraday updates
+# Function to calculate planetary positions with intraday precision
 def get_planetary_positions(date_time):
     utc_offset = 5.5  # IST is UTC+5:30
     utc_datetime = date_time - timedelta(hours=utc_offset)
@@ -91,7 +91,6 @@ def get_planetary_positions(date_time):
             nak = pos["nakshatra"]
             pada = 1  # Simplified for almanac data
             is_retro = pos["retro"]
-            # Calculate house for almanac data
             _, house = get_zodiac_house(lon_sid)
         else:
             lon_trop = swe.calc_ut(jd, pid)[0][0]
@@ -109,28 +108,26 @@ def get_planetary_positions(date_time):
         degree_in_sign = lon_sid % 30
         degree_int = int(degree_in_sign)
         minute_int = int((degree_in_sign - degree_int) * 60)
+        second_int = int(((degree_in_sign - degree_int) * 60 - minute_int) * 60)
         
         positions.append({
             "Planet": planet,
             "Sign": sign,
-            "Degree": f"{degree_int}° {minute_int}'",
+            "Degree": f"{degree_int}° {minute_int}' {second_int}\"",
             "House": house,
             "Nakshatra": nak,
             "Pada": pada,
             "Retrograde": "Yes" if is_retro else "No" if is_retro != "N/A" else "N/A",
-            "Date": date_time.strftime("%Y-%m-%d %H:%M IST")
+            "Date": date_time.strftime("%Y-%m-%d %H:%M:%S IST")
         })
     return pd.DataFrame(positions)
 
-# Function to calculate aspects with almanac data
+# Function to calculate aspects with Vedic and Western rules
 def get_aspects(positions, previous_aspects=None):
     aspects = []
     planets = positions["Planet"].tolist()
-    degrees = positions["Degree"].apply(lambda x: float(x.split('°')[0]) + float(x.split('°')[1].split("'")[0])/60)
-    # Convert string date to datetime object
-    date_str = positions.iloc[0]["Date"]
-    date_time = datetime.strptime(date_str, "%Y-%m-%d %H:%M IST")
-    almanac_data = fetch_almanac_data(date_time)
+    degrees = positions["Degree"].apply(lambda x: float(x.split('°')[0]) + float(x.split('°')[1].split("'")[0])/60 + float(x.split('°')[1].split("'")[1].split('"')[0])/3600)
+    almanac_data = fetch_almanac_data(datetime.strptime(positions.iloc[0]["Date"], "%Y-%m-%d %H:%M:%S IST"))
     
     if almanac_data and "aspects" in almanac_data:
         for aspect in almanac_data["aspects"]:
@@ -153,24 +150,28 @@ def get_aspects(positions, previous_aspects=None):
                 deg1 = full_degrees[i]
                 deg2 = full_degrees[j]
                 diff = min((deg2 - deg1) % 360, (deg1 - deg2) % 360)
-                
                 weight = (planet_weights.get(p1, 1.0) + planet_weights.get(p2, 1.0)) / 2
                 
+                # Western aspects
                 if diff < 3:
-                    aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Conjunction", 
-                                   "Degree": f"{diff:.2f}°", "Weight": weight})
+                    aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Conjunction", "Degree": f"{diff:.2f}°", "Weight": weight})
                 elif 57 < diff < 63:
-                    aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Sextile", 
-                                   "Degree": f"{diff:.2f}°", "Weight": weight})
+                    aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Sextile", "Degree": f"{diff:.2f}°", "Weight": weight})
                 elif 87 < diff < 93:
-                    aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Square", 
-                                   "Degree": f"{diff:.2f}°", "Weight": weight})
+                    aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Square", "Degree": f"{diff:.2f}°", "Weight": weight})
                 elif 117 < diff < 123:
-                    aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Trine", 
-                                   "Degree": f"{diff:.2f}°", "Weight": weight})
+                    aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Trine", "Degree": f"{diff:.2f}°", "Weight": weight})
                 elif 177 < diff < 183:
-                    aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Opposition", 
-                                   "Degree": f"{diff:.2f}°", "Weight": weight})
+                    aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Opposition", "Degree": f"{diff:.2f}°", "Weight": weight})
+                
+                # Vedic aspects (simplified)
+                sign_diff = int((deg2 - deg1) / 30) % 12
+                if p1 == "Mars" and (sign_diff == 3 or sign_diff == 6 or sign_diff == 9):
+                    aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Vedic 4th/7th", "Degree": f"{diff:.2f}°", "Weight": weight * 0.8})
+                elif p1 == "Jupiter" and (sign_diff == 4 or sign_diff == 6 or sign_diff == 8):
+                    aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Vedic 5th/7th/9th", "Degree": f"{diff:.2f}°", "Weight": weight * 1.2})
+                elif p1 == "Saturn" and (sign_diff == 3 or sign_diff == 7 or sign_diff == 10):
+                    aspects.append({"Planet1": p1, "Planet2": p2, "Aspect": "Vedic 3rd/7th/10th", "Degree": f"{diff:.2f}°", "Weight": weight * 0.9})
     
     current_aspects = pd.DataFrame(aspects)
     new_aspects = []
@@ -196,9 +197,9 @@ def get_trading_signal(aspects, new_aspects, dissolved_aspects, previous_signal=
         
         for _, aspect in aspects.iterrows():
             weight = aspect["Weight"]
-            if aspect["Aspect"] in ["Trine", "Sextile"]:
+            if aspect["Aspect"] in ["Trine", "Sextile", "Vedic 5th/7th/9th"]:
                 bullish_score += weight
-            elif aspect["Aspect"] in ["Square", "Opposition"]:
+            elif aspect["Aspect"] in ["Square", "Opposition", "Vedic 4th/7th", "Vedic 3rd/7th/10th"]:
                 bearish_score += weight
             elif aspect["Aspect"] == "Conjunction":
                 if aspect["Planet1"] in ["Jupiter", "Venus"] or aspect["Planet2"] in ["Jupiter", "Venus"]:
@@ -209,25 +210,24 @@ def get_trading_signal(aspects, new_aspects, dissolved_aspects, previous_signal=
         # Adjust scores based on new and dissolved aspects for swing signals
         for aspect in new_aspects:
             weight = aspect.get("Weight", 0)
-            if aspect["Aspect"] in ["Trine", "Sextile"]:
-                bullish_score += weight * 1.2  # Boost for new bullish aspect
-            elif aspect["Aspect"] in ["Square", "Opposition"]:
-                bearish_score += weight * 1.2  # Boost for new bearish aspect
+            if aspect["Aspect"] in ["Trine", "Sextile", "Vedic 5th/7th/9th"]:
+                bullish_score += weight * 1.2
+            elif aspect["Aspect"] in ["Square", "Opposition", "Vedic 4th/7th", "Vedic 3rd/7th/10th"]:
+                bearish_score += weight * 1.2
         
         for aspect in dissolved_aspects:
             weight = aspect.get("Weight", 0)
-            if aspect["Aspect"] in ["Trine", "Sextile"]:
-                bullish_score -= weight * 0.5  # Reduce for dissolved bullish aspect
-            elif aspect["Aspect"] in ["Square", "Opposition"]:
-                bearish_score -= weight * 0.5  # Reduce for dissolved bearish aspect
+            if aspect["Aspect"] in ["Trine", "Sextile", "Vedic 5th/7th/9th"]:
+                bullish_score -= weight * 0.5
+            elif aspect["Aspect"] in ["Square", "Opposition", "Vedic 4th/7th", "Vedic 3rd/7th/10th"]:
+                bearish_score -= weight * 0.5
         
-        # Determine swing signal based on score changes and previous signal
         signal = "Neutral"
         color = "gray"
-        if bullish_score > bearish_score * 1.5 or (new_aspects and any(a["Aspect"] in ["Trine", "Sextile"] for a in new_aspects)):
+        if bullish_score > bearish_score * 1.5 or (new_aspects and any(a["Aspect"] in ["Trine", "Sextile", "Vedic 5th/7th/9th"] for a in new_aspects)):
             signal = "Swing Buy"
             color = "lightgreen"
-        elif bearish_score > bullish_score * 1.5 or (new_aspects and any(a["Aspect"] in ["Square", "Opposition"] for a in new_aspects)):
+        elif bearish_score > bullish_score * 1.5 or (new_aspects and any(a["Aspect"] in ["Square", "Opposition", "Vedic 4th/7th", "Vedic 3rd/7th/10th"] for a in new_aspects)):
             signal = "Swing Sell"
             color = "lightcoral"
         elif bullish_score > bearish_score:
@@ -280,20 +280,14 @@ def get_significant_transits(current_positions, previous_positions=None, reporte
                 current_parts = current_row["Degree"].split('°')
                 if len(current_parts) != 2:
                     raise ValueError(f"Invalid degree format for {planet}: {current_row['Degree']}")
-                deg, min_str = current_parts
-                min_parts = min_str.split("'")
-                if len(min_parts) != 2:
-                    raise ValueError(f"Invalid minute format for {planet}: {min_str}")
-                current_deg = float(deg) + float(min_parts[0])/60
+                deg, min_sec = current_parts[1].split("'")
+                current_deg = float(current_parts[0]) + float(min_sec.split('"')[0])/60
                 
                 prev_parts = prev_degree.split('°')
                 if len(prev_parts) != 2:
                     raise ValueError(f"Invalid degree format for {planet}: {prev_degree}")
-                prev_deg_val, prev_min_str = prev_parts
-                prev_min_parts = prev_min_str.split("'")
-                if len(prev_min_parts) != 2:
-                    raise ValueError(f"Invalid minute format for {planet}: {prev_min_str}")
-                prev_deg = float(prev_deg_val) + float(prev_min_parts[0])/60
+                prev_deg_val, prev_min_sec = prev_parts[1].split("'")
+                prev_deg = float(prev_parts[0]) + float(prev_min_sec.split('"')[0])/60
                 
                 if abs(current_deg - prev_deg) > 0.5:
                     change = f"{planet} moved to {current_row['Degree']}"
@@ -386,8 +380,8 @@ with tab1:
             current_aspects, _, _ = get_aspects(positions, previous_aspects)
             for _, aspect in current_aspects.iterrows():
                 date = positions.iloc[0]["Date"].split(" ")[0]  # Use first position's date
-                tendency = "Bullish" if aspect["Aspect"] in ["Trine", "Sextile"] else \
-                           "Bearish" if aspect["Aspect"] in ["Square", "Opposition"] else \
+                tendency = "Bullish" if aspect["Aspect"] in ["Trine", "Sextile", "Vedic 5th/7th/9th"] else \
+                           "Bearish" if aspect["Aspect"] in ["Square", "Opposition", "Vedic 4th/7th", "Vedic 3rd/7th/10th"] else \
                            "Neutral" if aspect["Aspect"] == "Conjunction" and \
                            (aspect["Planet1"] in ["Jupiter", "Venus"] or aspect["Planet2"] in ["Jupiter", "Venus"]) else "Bearish"
                 aspect_data.append({
@@ -438,7 +432,7 @@ with tab2:
         with col2:
             start_date = st.date_input("Start Date", datetime(2025, 7, 30))
         with col3:
-            start_time = st.time_input("Start Time (IST)", datetime(2025, 7, 30, 9, 15).time())
+            start_time = st.time_input("Start Time (IST)", datetime(2025, 7, 30, 0, 33).time())  # Current time
         with col4:
             end_date = st.date_input("End Date", datetime(2025, 7, 30))
             end_time = st.time_input("End Time (IST)", datetime(2025, 7, 30, 15, 30).time())
@@ -474,7 +468,7 @@ with tab2:
                 transits_display = ", ".join(significant_transits) if significant_transits else "No significant changes" if not timeline else ""
                 
                 timeline.append({
-                    "DateTime": current_time.strftime("%Y-%m-%d %H:%M IST"),
+                    "DateTime": current_time.strftime("%Y-%m-%d %H:%M:%S IST"),
                     "Significant Transits": transits_display,
                     "Active Aspects": ", ".join(active_aspects),
                     "Signal": signal,
@@ -486,7 +480,7 @@ with tab2:
                 previous_positions = positions.copy()
                 previous_aspects = current_aspects.copy()
                 previous_signal = signal
-                current_time += timedelta(minutes=15)
+                current_time += timedelta(minutes=5)  # Increased frequency for intraday detail
             
             timeline_df = pd.DataFrame(timeline)
             
