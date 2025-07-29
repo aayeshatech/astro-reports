@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta, time as datetime_time
 import logging
+import re  # Added missing import for regular expressions
 
 # Configure minimal logging for Streamlit Cloud
 logging.basicConfig(level=logging.ERROR)  # Only log errors to avoid clutter
