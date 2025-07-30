@@ -444,48 +444,144 @@ def generate_market_insights(positions_df, aspects_df):
         "critical_aspects": critical_aspects
     }
 
-def calculate_enhanced_trading_signal(aspects_df, session_info):
-    """Calculate enhanced trading signal with session context"""
-    if aspects_df.empty:
-        return "Neutral", "gray", 0, 0, "No aspects active"
+def detect_planetary_transits(current_positions, previous_positions=None):
+    """Detect detailed planetary transits with market impact"""
+    if previous_positions is None or previous_positions.empty:
+        return []
     
-    # Base score calculation
-    bullish_score = aspects_df[aspects_df["Tendency"] == "Bullish"]["Weight"].sum()
-    bearish_score = aspects_df[aspects_df["Tendency"] == "Bearish"]["Weight"].sum()
+    transits = []
+    for _, current_row in current_positions.iterrows():
+        planet = current_row["Planet"]
+        prev_row = previous_positions[previous_positions["Planet"] == planet]
+        
+        if not prev_row.empty:
+            prev_row = prev_row.iloc[0]
+            
+            # Sign change (major transit)
+            if current_row["Sign"] != prev_row["Sign"]:
+                old_trait = zodiac_market_traits.get(prev_row["Sign"], {})
+                new_trait = zodiac_market_traits.get(current_row["Sign"], {})
+                impact = f"Market shift: {old_trait.get('trend', 'Neutral')} → {new_trait.get('trend', 'Neutral')}"
+                transits.append({
+                    "type": "Sign Change",
+                    "planet": planet,
+                    "change": f"{prev_row['Sign']} → {current_row['Sign']}",
+                    "impact": impact,
+                    "sectors": new_trait.get('sectors', 'General'),
+                    "strength": "High"
+                })
+            
+            # Nakshatra change (moderate transit)
+            elif current_row["Nakshatra"] != prev_row["Nakshatra"]:
+                transits.append({
+                    "type": "Nakshatra Change", 
+                    "planet": planet,
+                    "change": f"{prev_row['Nakshatra']} → {current_row['Nakshatra']}",
+                    "impact": current_row["Market_Influence"],
+                    "sectors": "Sector-specific",
+                    "strength": "Medium"
+                })
+            
+            # Significant degree movement
+            else:
+                deg_diff = abs(current_row["Full_Degree"] - prev_row["Full_Degree"])
+                if deg_diff > 0.5:  # More than 30 minutes of movement
+                    transits.append({
+                        "type": "Degree Movement",
+                        "planet": planet, 
+                        "change": f"{deg_diff:.1f}° movement",
+                        "impact": "Gradual influence change",
+                        "sectors": "Intraday impact",
+                        "strength": "Low"
+                    })
+    
+    return transits
+
+def calculate_enhanced_trading_signal(aspects_df, session_info, new_aspects=None, dissolved_aspects=None, transits=None):
+    """Calculate enhanced trading signal with comprehensive analysis"""
+    if aspects_df.empty:
+        return "Neutral", "gray", 0, 0, "No planetary aspects active", []
+    
+    # Base score calculation with aspect strength
+    bullish_score = 0
+    bearish_score = 0
+    signal_reasons = []
+    
+    for _, aspect in aspects_df.iterrows():
+        weight = aspect["Weight"]
+        strength_multiplier = 1.5 if aspect["Strength"] == "Strong" else 1.0
+        
+        if aspect["Tendency"] == "Bullish":
+            bullish_score += weight * strength_multiplier
+        elif aspect["Tendency"] == "Bearish":
+            bearish_score += weight * strength_multiplier
+    
+    # New aspects bonus (formation)
+    if new_aspects:
+        for aspect in new_aspects:
+            if aspect["Strength"] == "Strong":
+                bonus = aspect["Weight"] * 0.5
+                if aspect["Tendency"] == "Bullish":
+                    bullish_score += bonus
+                    signal_reasons.append(f"New {aspect['Planet1']}-{aspect['Planet2']} {aspect['Aspect']} forming (+{bonus:.1f})")
+                elif aspect["Tendency"] == "Bearish":
+                    bearish_score += bonus
+                    signal_reasons.append(f"New {aspect['Planet1']}-{aspect['Planet2']} {aspect['Aspect']} forming (-{bonus:.1f})")
+    
+    # Dissolved aspects impact (separation)
+    if dissolved_aspects:
+        for aspect in dissolved_aspects:
+            bonus = aspect["Weight"] * 0.3
+            if aspect["Tendency"] == "Bullish":
+                bearish_score += bonus  # Loss of bullish aspect = bearish
+                signal_reasons.append(f"{aspect['Planet1']}-{aspect['Planet2']} {aspect['Aspect']} dissolving (-{bonus:.1f})")
+            elif aspect["Tendency"] == "Bearish":
+                bullish_score += bonus  # Loss of bearish aspect = bullish
+                signal_reasons.append(f"{aspect['Planet1']}-{aspect['Planet2']} {aspect['Aspect']} dissolving (+{bonus:.1f})")
+    
+    # Transit impact
+    if transits:
+        for transit in transits:
+            if transit["strength"] == "High":
+                if "Bullish" in transit["impact"] or "growth" in transit["impact"].lower():
+                    bullish_score += 1.0
+                    signal_reasons.append(f"{transit['planet']} {transit['change']} (+1.0)")
+                elif "Bearish" in transit["impact"] or "caution" in transit["impact"].lower():
+                    bearish_score += 1.0
+                    signal_reasons.append(f"{transit['planet']} {transit['change']} (-1.0)")
     
     # Session-based adjustments
     session = session_info["session"]
     if session == "Opening":
-        # Opening session amplifies signals
         bullish_score *= 1.2
         bearish_score *= 1.2
+        signal_reasons.append("Opening volatility amplification")
     elif session == "Closing":
-        # Closing session moderates signals  
         bullish_score *= 0.9
         bearish_score *= 0.9
+        signal_reasons.append("Closing moderation effect")
     
-    # Calculate net score and signal strength
+    # Calculate net score and determine signal
     net_score = bullish_score - bearish_score
     total_score = bullish_score + bearish_score
     
-    # Determine signal
     if total_score == 0:
         signal = "Neutral"
         color = "gray"
     else:
         signal_ratio = abs(net_score) / total_score
         
-        if signal_ratio > 0.7:  # Strong signal threshold
+        if signal_ratio > 0.65:  # Strong signal threshold
             if net_score > 0:
                 signal = "Strong Buy"
                 color = "darkgreen"
             else:
-                signal = "Strong Sell"
+                signal = "Strong Sell" 
                 color = "darkred"
-        elif signal_ratio > 0.4:  # Moderate signal
+        elif signal_ratio > 0.35:  # Moderate signal
             if net_score > 0:
                 signal = "Buy"
-                color = "lightgreen"
+                color = "lightgreen" 
             else:
                 signal = "Sell"
                 color = "lightcoral"
@@ -493,16 +589,10 @@ def calculate_enhanced_trading_signal(aspects_df, session_info):
             signal = "Neutral"
             color = "gray"
     
-    # Generate signal details
-    strong_aspects = aspects_df[aspects_df["Strength"] == "Strong"]
-    details = []
-    for _, aspect in strong_aspects.head(3).iterrows():
-        weight_sign = "+" if aspect["Tendency"] == "Bullish" else "-"
-        details.append(f"{weight_sign}{aspect['Weight']:.1f} ({aspect['Planet1']}-{aspect['Planet2']} {aspect['Aspect']})")
+    # Generate detailed signal explanation
+    signal_details = f"Score: {bullish_score:.1f}B - {bearish_score:.1f}B = {net_score:.1f}"
     
-    signal_details = "; ".join(details) if details else "Weak aspects"
-    
-    return signal, color, round(bullish_score, 2), round(bearish_score, 2), signal_details
+    return signal, color, round(bullish_score, 2), round(bearish_score, 2), signal_details, signal_reasons
 
 def generate_daily_report(date, positions_df, timeline_df):
     """Generate comprehensive daily report like DeepSeek"""
@@ -730,11 +820,13 @@ with tab1:
                 with col5:
                     st.metric("Signal Strength", session_info['strength'])
                 
-                # Current trading signal
-                signal, color, bull_score, bear_score, signal_details = calculate_enhanced_trading_signal(current_aspects_df, session_info)
+                # Current trading signal with enhanced analysis
+                signal, color, bull_score, bear_score, signal_details, signal_reasons = calculate_enhanced_trading_signal(
+                    current_aspects_df, session_info
+                )
                 
-                # Signal display
-                st.subheader("🎯 Current Trading Signal")
+                # Signal display with detailed reasoning
+                st.subheader("🎯 Current Trading Signal & Analysis")
                 signal_col1, signal_col2, signal_col3 = st.columns([2, 1, 1])
                 
                 with signal_col1:
@@ -748,11 +840,93 @@ with tab1:
                         st.markdown(f'<div class="signal-sell">📉 {signal}</div>', unsafe_allow_html=True)
                     else:
                         st.markdown(f'<div class="signal-neutral">➡️ {signal}</div>', unsafe_allow_html=True)
+                    
+                    # Show signal reasoning
+                    if signal_reasons:
+                        st.markdown("**Signal Reasoning:**")
+                        for reason in signal_reasons[:3]:
+                            st.write(f"• {reason}")
                 
                 with signal_col2:
                     st.metric("Net Score", f"{bull_score - bear_score:.2f}")
+                    st.metric("Signal Strength", session_info['strength'])
                 with signal_col3:
                     st.metric("Active Aspects", len(current_aspects_df))
+                    st.metric("Bullish/Bearish", f"{session_info['bullish_aspects']}/{session_info['bearish_aspects']}")
+                
+                # Current planetary speeds and movement
+                st.subheader("🌍 Real-time Planetary Movement Analysis")
+                
+                movement_data = []
+                for _, pos in current_positions.iterrows():
+                    planet = pos["Planet"]
+                    speed = PLANETARY_SPEEDS.get(planet, 0)
+                    daily_movement = abs(speed)
+                    
+                    # Calculate when planet will change nakshatra/sign
+                    current_deg = pos["Full_Degree"] % 30
+                    if speed > 0:
+                        deg_to_next = 30 - current_deg
+                        hours_to_sign_change = deg_to_next / (daily_movement / 24) if daily_movement > 0 else 999
+                    else:
+                        hours_to_sign_change = current_deg / (daily_movement / 24) if daily_movement > 0 else 999
+                    
+                    movement_data.append({
+                        "Planet": planet,
+                        "Current_Position": f"{pos['Sign']} {pos['Degree']}",
+                        "Daily_Speed": f"{daily_movement:.2f}°/day",
+                        "Next_Sign_Change": f"~{hours_to_sign_change:.1f} hours" if hours_to_sign_change < 48 else ">2 days",
+                        "Movement_Direction": "Forward" if speed > 0 else "Retrograde",
+                        "Market_Impact": pos["Market_Influence"]
+                    })
+                
+                movement_df = pd.DataFrame(movement_data)
+                st.dataframe(movement_df, use_container_width=True)
+                
+                # Upcoming aspect predictions
+                st.subheader("🔮 Upcoming Aspect Formations (Next 24 Hours)")
+                
+                upcoming_aspects = []
+                future_times = [current_time + timedelta(hours=h) for h in [1, 3, 6, 12, 24]]
+                
+                for future_time in future_times:
+                    future_positions = calculate_planetary_positions(future_time)
+                    future_aspects_df, _ = get_aspects(future_positions)
+                    
+                    # Find new aspects that will form
+                    current_keys = set((row["Planet1"], row["Planet2"], row["Aspect"]) for _, row in current_aspects_df.iterrows())
+                    future_keys = set((row["Planet1"], row["Planet2"], row["Aspect"]) for _, row in future_aspects_df.iterrows())
+                    
+                    new_future_keys = future_keys - current_keys
+                    
+                    for _, aspect in future_aspects_df.iterrows():
+                        if (aspect["Planet1"], aspect["Planet2"], aspect["Aspect"]) in new_future_keys:
+                            hours_ahead = (future_time - current_time).total_seconds() / 3600
+                            upcoming_aspects.append({
+                                "Time_Ahead": f"{hours_ahead:.0f}h",
+                                "Aspect": f"{aspect['Planet1']}-{aspect['Planet2']} {aspect['Aspect']}",
+                                "Tendency": aspect["Tendency"],
+                                "Weight": aspect["Weight"],
+                                "Market_Effect": aspect["Market_Effect"],
+                                "Formation_Time": future_time.strftime("%H:%M")
+                            })
+                
+                if upcoming_aspects:
+                    upcoming_df = pd.DataFrame(upcoming_aspects)
+                    upcoming_df = upcoming_df.sort_values("Weight", ascending=False).head(8)
+                    
+                    def highlight_upcoming(row):
+                        if row["Tendency"] == "Bullish":
+                            return ['background-color: #e8f5e8; color: #2e7d32;'] * len(row)
+                        elif row["Tendency"] == "Bearish":
+                            return ['background-color: #ffebee; color: #c62828;'] * len(row)
+                        else:
+                            return [''] * len(row)
+                    
+                    styled_upcoming = upcoming_df.style.apply(highlight_upcoming, axis=1)
+                    st.dataframe(styled_upcoming, use_container_width=True)
+                else:
+                    st.info("No major new aspects forming in the next 24 hours")
                 
                 # Market insights
                 insights = generate_market_insights(current_positions, current_aspects_df)
@@ -829,9 +1003,10 @@ with tab2:
             progress_bar = st.progress(0)
             status_text = st.empty()
             
-            # Analysis execution
+            # Analysis execution with enhanced tracking
             timeline = []
             previous_positions = None
+            previous_aspects_df = pd.DataFrame()
             
             total_intervals = int((end_datetime - start_datetime).total_seconds() / (interval_minutes * 60))
             current_time = start_datetime
@@ -849,32 +1024,60 @@ with tab2:
                 # Filter aspects by minimum weight
                 aspects_df = aspects_df[aspects_df["Weight"] >= min_aspect_weight]
                 
+                # Detect aspect changes (new formations and dissolutions)
+                new_aspects = []
+                dissolved_aspects = []
+                
+                if not previous_aspects_df.empty:
+                    # Compare current vs previous aspects
+                    prev_keys = set((row["Planet1"], row["Planet2"], row["Aspect"]) for _, row in previous_aspects_df.iterrows())
+                    curr_keys = set((row["Planet1"], row["Planet2"], row["Aspect"]) for _, row in aspects_df.iterrows())
+                    
+                    # New aspect formations
+                    new_aspect_keys = curr_keys - prev_keys
+                    new_aspects = [row for _, row in aspects_df.iterrows() 
+                                 if (row["Planet1"], row["Planet2"], row["Aspect"]) in new_aspect_keys]
+                    
+                    # Dissolved aspects
+                    dissolved_aspect_keys = prev_keys - curr_keys  
+                    dissolved_aspects = [row for _, row in previous_aspects_df.iterrows()
+                                       if (row["Planet1"], row["Planet2"], row["Aspect"]) in dissolved_aspect_keys]
+                
+                # Enhanced transit analysis
+                transits = []
+                if previous_positions is not None and show_transits:
+                    transits = detect_planetary_transits(positions, previous_positions)
+                
                 # Session analysis
                 session_info = analyze_market_session(current_time.strftime("%H:%M"), aspects_df, positions)
                 
-                # Enhanced signal calculation
-                signal, color, bull_score, bear_score, signal_details = calculate_enhanced_trading_signal(aspects_df, session_info)
-                
-                # Transit analysis
-                transits = []
-                if previous_positions is not None and show_transits:
-                    for _, current_row in positions.iterrows():
-                        planet = current_row["Planet"]
-                        prev_row = previous_positions[previous_positions["Planet"] == planet]
-                        
-                        if not prev_row.empty:
-                            prev_row = prev_row.iloc[0]
-                            if current_row["Sign"] != prev_row["Sign"]:
-                                transits.append(f"{planet}: {prev_row['Sign']} → {current_row['Sign']}")
-                            elif current_row["Nakshatra"] != prev_row["Nakshatra"]:
-                                transits.append(f"{planet}: {prev_row['Nakshatra']} → {current_row['Nakshatra']}")
+                # Enhanced signal calculation with all factors
+                signal, color, bull_score, bear_score, signal_details, signal_reasons = calculate_enhanced_trading_signal(
+                    aspects_df, session_info, new_aspects, dissolved_aspects, transits
+                )
                 
                 # Aspect combinations
                 combo_effects = []
                 if show_combos:
                     combo_effects = [row["Combo_Effect"] for _, row in aspects_df.iterrows() if row["Combo_Effect"]]
                 
-                # Timeline entry
+                # Format transit information
+                transit_text = "None"
+                if transits:
+                    major_transits = [t for t in transits if t["strength"] == "High"]
+                    if major_transits:
+                        transit_text = "; ".join([f"{t['planet']} {t['change']}" for t in major_transits])
+                    else:
+                        transit_text = "; ".join([f"{t['planet']} {t['change']}" for t in transits[:2]])
+                
+                # New/Dissolved aspects info
+                aspect_changes = []
+                if new_aspects:
+                    aspect_changes.extend([f"NEW: {a['Planet1']}-{a['Planet2']} {a['Aspect']}" for a in new_aspects])
+                if dissolved_aspects:
+                    aspect_changes.extend([f"END: {a['Planet1']}-{a['Planet2']} {a['Aspect']}" for a in dissolved_aspects])
+                
+                # Timeline entry with enhanced information
                 timeline.append({
                     "DateTime": current_time.strftime("%Y-%m-%d %H:%M"),
                     "Time": current_time.strftime("%H:%M"),
@@ -886,13 +1089,18 @@ with tab2:
                     "Bearish_Weight": bear_score,
                     "Active_Aspects": len(aspects_df),
                     "Session_Outlook": f"{session_info['emoji']} {session_info['outlook']}",
-                    "Transits": "; ".join(transits) if transits else "None",
+                    "Transits": transit_text,
+                    "Aspect_Changes": "; ".join(aspect_changes) if aspect_changes else "None",
                     "Combo_Effects": "; ".join(combo_effects) if combo_effects else "None",
                     "Signal_Details": signal_details,
-                    "Strength": session_info['strength']
+                    "Signal_Reasons": "; ".join(signal_reasons[:3]) if signal_reasons else "Base aspects only",
+                    "Strength": session_info['strength'],
+                    "New_Aspects": len(new_aspects),
+                    "Dissolved_Aspects": len(dissolved_aspects)
                 })
                 
                 previous_positions = positions.copy()
+                previous_aspects_df = aspects_df.copy()
                 current_time += timedelta(minutes=interval_minutes)
                 interval_count += 1
             
@@ -930,8 +1138,8 @@ with tab2:
                     st.metric("💥 Strong Sell", signal_counts.get("Strong Sell", 0))
                     st.markdown('</div>', unsafe_allow_html=True)
                 
-                # Detailed timeline
-                st.subheader("📈 Detailed Trading Timeline")
+                # Detailed timeline with enhanced information
+                st.subheader("📈 Detailed Trading Timeline with Aspect Analysis")
                 
                 # Enhanced highlighting function
                 def highlight_signals_enhanced(row):
@@ -946,16 +1154,42 @@ with tab2:
                     else:
                         return [''] * len(row)
                 
-                # Select display columns based on options
-                display_columns = ["Time", "Session", "Signal", "Net_Score", "Session_Outlook", "Active_Aspects"]
-                if show_transits:
-                    display_columns.append("Transits")
-                if show_combos:
-                    display_columns.append("Combo_Effects")
+                # Enhanced column selection
+                base_columns = ["Time", "Session", "Signal", "Net_Score", "Session_Outlook", "Active_Aspects"]
                 
-                display_df = timeline_df[display_columns]
+                # Add optional columns
+                if show_transits:
+                    base_columns.extend(["Transits", "Aspect_Changes"])
+                if show_combos:
+                    base_columns.append("Combo_Effects")
+                
+                # Always show signal reasoning
+                base_columns.extend(["Signal_Reasons", "New_Aspects", "Dissolved_Aspects"])
+                
+                display_df = timeline_df[base_columns]
                 styled_df = display_df.style.apply(highlight_signals_enhanced, axis=1)
-                st.dataframe(styled_df, use_container_width=True, height=400)
+                st.dataframe(styled_df, use_container_width=True, height=500)
+                
+                # Aspect Change Summary
+                st.subheader("⚡ Aspect Formation & Dissolution Analysis")
+                
+                aspect_summary = []
+                for _, row in timeline_df.iterrows():
+                    if row["New_Aspects"] > 0 or row["Dissolved_Aspects"] > 0:
+                        aspect_summary.append({
+                            "Time": row["Time"],
+                            "New_Formations": row["New_Aspects"], 
+                            "Dissolutions": row["Dissolved_Aspects"],
+                            "Net_Change": row["New_Aspects"] - row["Dissolved_Aspects"],
+                            "Signal_Impact": row["Signal"],
+                            "Aspect_Details": row["Aspect_Changes"]
+                        })
+                
+                if aspect_summary:
+                    aspect_df = pd.DataFrame(aspect_summary)
+                    st.dataframe(aspect_df, use_container_width=True)
+                else:
+                    st.info("No significant aspect changes detected during this period")
                 
                 # Advanced visualizations
                 st.subheader("📊 Advanced Market Analysis Charts")
@@ -1024,8 +1258,18 @@ with tab2:
                 
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # Key insights and recommendations
-                st.subheader("🔍 Key Insights & Trading Recommendations")
+                # Key insights and recommendations with critical timing
+                st.subheader("🔍 Key Insights & Critical Trading Times")
+                
+                # Identify critical times based on multiple factors
+                timeline_df["Criticality_Score"] = (
+                    timeline_df["Active_Aspects"] * 0.3 +
+                    abs(timeline_df["Net_Score"]) * 0.4 +
+                    timeline_df["New_Aspects"] * 2.0 +
+                    timeline_df["Dissolved_Aspects"] * 1.5
+                )
+                
+                critical_times = timeline_df.nlargest(5, "Criticality_Score")
                 
                 # Analysis insights
                 max_bullish = timeline_df.loc[timeline_df["Bullish_Weight"].idxmax()]
@@ -1041,6 +1285,8 @@ with tab2:
                     st.write(f"**Signal**: {max_bullish['Signal']}")
                     st.write(f"**Score**: {max_bullish['Bullish_Weight']:.2f}")
                     st.write(f"**Session**: {max_bullish['Session']}")
+                    if max_bullish['Signal_Reasons']:
+                        st.write(f"**Why**: {max_bullish['Signal_Reasons'][:100]}...")
                     st.markdown('</div>', unsafe_allow_html=True)
                 
                 with insight_col2:
@@ -1050,6 +1296,8 @@ with tab2:
                     st.write(f"**Signal**: {max_bearish['Signal']}")
                     st.write(f"**Score**: {max_bearish['Bearish_Weight']:.2f}")
                     st.write(f"**Session**: {max_bearish['Session']}")
+                    if max_bearish['Signal_Reasons']:
+                        st.write(f"**Why**: {max_bearish['Signal_Reasons'][:100]}...")
                     st.markdown('</div>', unsafe_allow_html=True)
                 
                 with insight_col3:
@@ -1059,7 +1307,84 @@ with tab2:
                     st.write(f"**Aspects**: {max_activity['Active_Aspects']}")
                     st.write(f"**Signal**: {max_activity['Signal']}")
                     st.write(f"**Outlook**: {max_activity['Session_Outlook']}")
+                    if max_activity['Aspect_Changes'] != "None":
+                        st.write(f"**Changes**: {max_activity['Aspect_Changes'][:80]}...")
                     st.markdown('</div>', unsafe_allow_html=True)
+                
+                # Critical times analysis
+                st.subheader("⏰ Most Critical Trading Times")
+                st.write("**Times when maximum astrological activity occurs - ideal for entries/exits:**")
+                
+                critical_display = []
+                for _, row in critical_times.iterrows():
+                    reason_parts = []
+                    if row["New_Aspects"] > 0:
+                        reason_parts.append(f"{row['New_Aspects']} new aspects forming")
+                    if row["Dissolved_Aspects"] > 0:
+                        reason_parts.append(f"{row['Dissolved_Aspects']} aspects dissolving")
+                    if abs(row["Net_Score"]) > 3:
+                        reason_parts.append(f"Strong signal ({row['Signal']})")
+                    if row["Active_Aspects"] > 8:
+                        reason_parts.append(f"High aspect activity ({row['Active_Aspects']})")
+                    
+                    critical_display.append({
+                        "Time": row["Time"],
+                        "Session": row["Session"].split(" ")[1] if " " in row["Session"] else row["Session"],
+                        "Signal": row["Signal"],
+                        "Critical_Score": f"{row['Criticality_Score']:.1f}",
+                        "Why_Critical": "; ".join(reason_parts[:2]),
+                        "Trading_Advice": get_trading_advice(row["Signal"], row["Session"].split(" ")[1] if " " in row["Session"] else row["Session"])
+                    })
+                
+                critical_df = pd.DataFrame(critical_display)
+                
+                def highlight_critical_times(row):
+                    score = float(row["Critical_Score"])
+                    if score > 8:
+                        return ['background-color: #ff6b6b; color: white; font-weight: bold;'] * len(row)
+                    elif score > 5:
+                        return ['background-color: #ffa726; color: white;'] * len(row)
+                    else:
+                        return ['background-color: #66bb6a; color: white;'] * len(row)
+                
+                styled_critical = critical_df.style.apply(highlight_critical_times, axis=1)
+                st.dataframe(styled_critical, use_container_width=True)
+
+def get_trading_advice(signal, session):
+    """Generate specific trading advice based on signal and session"""
+    advice_map = {
+        ("Strong Buy", "Opening"): "Aggressive long entry on gap down, expect strong rally",
+        ("Strong Buy", "Morning"): "Build long positions, momentum likely to continue",
+        ("Strong Buy", "Mid-Session"): "Institutional buying, add to longs on dips",
+        ("Strong Buy", "Afternoon"): "Late rally expected, short covering likely",
+        ("Strong Buy", "Closing"): "Positive close expected, hold overnight longs",
+        
+        ("Buy", "Opening"): "Selective long entry, watch for confirmation",
+        ("Buy", "Morning"): "Moderate buying opportunity, use stops",
+        ("Buy", "Mid-Session"): "Gradual accumulation, dollar-cost average",
+        ("Buy", "Afternoon"): "Recovery possible, light long positions",
+        ("Buy", "Closing"): "Mild positive bias, conservative approach",
+        
+        ("Strong Sell", "Opening"): "Aggressive short entry on gap up, expect sharp fall",
+        ("Strong Sell", "Morning"): "Build short positions, weakness to continue",
+        ("Strong Sell", "Mid-Session"): "Heavy institutional selling, avoid longs",
+        ("Strong Sell", "Afternoon"): "Exit all longs, sharp correction possible",
+        ("Strong Sell", "Closing"): "Negative close likely, exit before close",
+        
+        ("Sell", "Opening"): "Book profits, avoid fresh longs",
+        ("Sell", "Morning"): "Selling pressure building, lighten positions",
+        ("Sell", "Mid-Session"): "Profit booking phase, be defensive",
+        ("Sell", "Afternoon"): "Weakness emerging, book some profits",
+        ("Sell", "Closing"): "End day flat, avoid overnight risk",
+        
+        ("Neutral", "Opening"): "Wait for direction, no rush to trade",
+        ("Neutral", "Morning"): "Range-bound trading, buy support sell resistance",
+        ("Neutral", "Mid-Session"): "Consolidation phase, scalping opportunities",
+        ("Neutral", "Afternoon"): "Sideways movement, theta decay for options",
+        ("Neutral", "Closing"): "Flat close expected, square off positions"
+    }
+    
+    return advice_map.get((signal, session), "Monitor price action closely")
 
 # Tab 3: Professional Daily Report
 with tab3:
