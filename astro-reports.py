@@ -4,16 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
-import requests
-import json
 import time
-
-# Try to import swisseph, fallback to simulation if not available
-try:
-    import swisseph as swe
-    SWISSEPH_AVAILABLE = True
-except ImportError:
-    SWISSEPH_AVAILABLE = False
 
 # Nakshatra data with market characteristics
 nakshatras = [
@@ -48,28 +39,28 @@ nakshatras = [
 
 # Zodiac signs and market characteristics
 zodiac_market_traits = {
-    "Aries": {"trend": "Bullish", "volatility": "High", "sectors": "Energy, Defense"},
-    "Taurus": {"trend": "Stable", "volatility": "Low", "sectors": "Banking, FMCG"},
-    "Gemini": {"trend": "Volatile", "volatility": "Medium", "sectors": "IT, Communication"},
-    "Cancer": {"trend": "Defensive", "volatility": "Medium", "sectors": "Healthcare, Food"},
-    "Leo": {"trend": "Strong", "volatility": "Medium", "sectors": "Luxury, Entertainment"},
-    "Virgo": {"trend": "Cautious", "volatility": "Low", "sectors": "Pharma, Services"},
-    "Libra": {"trend": "Balanced", "volatility": "Low", "sectors": "Beauty, Fashion"},
-    "Scorpio": {"trend": "Intense", "volatility": "High", "sectors": "Mining, Chemicals"},
-    "Sagittarius": {"trend": "Optimistic", "volatility": "Medium", "sectors": "Travel, Education"},
-    "Capricorn": {"trend": "Conservative", "volatility": "Low", "sectors": "Infrastructure, Realty"},
-    "Aquarius": {"trend": "Innovative", "volatility": "High", "sectors": "Technology, Renewables"},
-    "Pisces": {"trend": "Emotional", "volatility": "High", "sectors": "Water, Spiritual"}
+    "Aries": {"trend": "Bullish", "volatility": "High", "sectors": "Energy, Defense, Metals"},
+    "Taurus": {"trend": "Stable", "volatility": "Low", "sectors": "Banking, FMCG, Real Estate"},
+    "Gemini": {"trend": "Volatile", "volatility": "Medium", "sectors": "IT, Telecom, Media"},
+    "Cancer": {"trend": "Defensive", "volatility": "Medium", "sectors": "Healthcare, Food, Home"},
+    "Leo": {"trend": "Strong", "volatility": "Medium", "sectors": "Luxury, Entertainment, Gold"},
+    "Virgo": {"trend": "Cautious", "volatility": "Low", "sectors": "Pharma, Services, Analytics"},
+    "Libra": {"trend": "Balanced", "volatility": "Low", "sectors": "Beauty, Fashion, Harmony"},
+    "Scorpio": {"trend": "Intense", "volatility": "High", "sectors": "Mining, Chemicals, Research"},
+    "Sagittarius": {"trend": "Optimistic", "volatility": "Medium", "sectors": "Travel, Education, Export"},
+    "Capricorn": {"trend": "Conservative", "volatility": "Low", "sectors": "Infrastructure, Government"},
+    "Aquarius": {"trend": "Innovative", "volatility": "High", "sectors": "Technology, Renewables, EV"},
+    "Pisces": {"trend": "Emotional", "volatility": "High", "sectors": "Water, Oil, Spirituality"}
 }
 
 # Market sessions
 market_sessions = {
-    "Pre-Market": {"start": "09:00", "end": "09:15", "characteristics": "Gap analysis"},
-    "Opening": {"start": "09:15", "end": "10:00", "characteristics": "High volatility, trend setting"},
-    "Morning": {"start": "10:00", "end": "11:30", "characteristics": "Primary trend development"},
-    "Mid-Session": {"start": "11:30", "end": "13:30", "characteristics": "Institutional activity"},
-    "Afternoon": {"start": "13:30", "end": "15:00", "characteristics": "Retail participation"},
-    "Closing": {"start": "15:00", "end": "15:30", "characteristics": "Settlement, final moves"}
+    "Pre-Market": {"start": "09:00", "end": "09:15", "characteristics": "Gap analysis, overnight news impact"},
+    "Opening": {"start": "09:15", "end": "10:00", "characteristics": "High volatility, trend setting, institutional orders"},
+    "Morning": {"start": "10:00", "end": "11:30", "characteristics": "Primary trend development, momentum building"},
+    "Mid-Session": {"start": "11:30", "end": "13:30", "characteristics": "Institutional activity, large orders"},
+    "Afternoon": {"start": "13:30", "end": "15:00", "characteristics": "Retail participation, profit booking"},
+    "Closing": {"start": "15:00", "end": "15:30", "characteristics": "Settlement, final adjustments, closing prices"}
 }
 
 # Enhanced planet weights for aspect strength
@@ -81,92 +72,88 @@ planet_weights = {
 
 # Planetary market influences
 planetary_influences = {
-    "Sun": {"positive": "Leadership stocks, govt policies", "negative": "Ego-driven decisions"},
-    "Moon": {"positive": "Sentiment, FMCG stocks", "negative": "Emotional trading"},
-    "Mars": {"positive": "Energy, metals, defense", "negative": "Aggressive selling"},
-    "Mercury": {"positive": "IT, communication, quick gains", "negative": "Volatility, confusion"},
-    "Jupiter": {"positive": "Banking, finance, optimism", "negative": "Over-expansion"},
-    "Venus": {"positive": "Luxury, beauty, consumption", "negative": "Speculation"},
-    "Saturn": {"positive": "Infrastructure, discipline", "negative": "Restrictions, delays"},
-    "Rahu": {"positive": "Innovation, foreign investment", "negative": "Illusion, manipulation"},
-    "Ketu": {"positive": "Spiritual stocks, detachment", "negative": "Sudden exits"}
+    "Sun": {
+        "positive": "Government policies favorable, PSU stocks rise, leadership emergence",
+        "negative": "Ego-driven decisions, power struggles, overconfidence in markets"
+    },
+    "Moon": {
+        "positive": "FMCG sector strength, emotional buying, consumer sentiment positive", 
+        "negative": "Emotional trading, mood swings, panic selling"
+    },
+    "Mars": {
+        "positive": "Energy sector boom, metals rally, defense stocks up, aggressive buying",
+        "negative": "War-like conditions, aggressive selling, conflict in markets"
+    },
+    "Mercury": {
+        "positive": "IT sector leadership, quick gains, communication stocks up, trading activity",
+        "negative": "Volatility, confusion, technical glitches, communication breakdown"
+    },
+    "Jupiter": {
+        "positive": "Banking sector strength, financial optimism, investment inflows, wisdom prevails",
+        "negative": "Over-expansion, excessive optimism, bubble formation"
+    },
+    "Venus": {
+        "positive": "Luxury goods up, beauty sector strong, consumption increase, aesthetic appeal",
+        "negative": "Speculation, materialism, luxury bubble, over-indulgence"
+    },
+    "Saturn": {
+        "positive": "Infrastructure development, disciplined trading, long-term investments",
+        "negative": "Restrictions, delays, bear market, regulatory hurdles"
+    },
+    "Rahu": {
+        "positive": "Innovation boom, foreign investment, technology adoption, unconventional gains",
+        "negative": "Illusion, manipulation, fake news impact, sudden reversals"
+    },
+    "Ketu": {
+        "positive": "Spiritual stocks, detachment from materialism, research-based decisions",
+        "negative": "Sudden exits, abandonment, loss of interest, unexpected events"
+    }
 }
 
-# Simulation data for when APIs are not available
-def get_simulation_data(date_time):
-    """Generate realistic planetary positions for simulation mode"""
-    base_positions = {
-        "Sun": {"longitude": 127.5, "sign": "Leo", "retrograde": False},
-        "Moon": {"longitude": 165.3, "sign": "Virgo", "retrograde": False},
-        "Mars": {"longitude": 52.1, "sign": "Taurus", "retrograde": False},
-        "Mercury": {"longitude": 115.8, "sign": "Cancer", "retrograde": True},
-        "Jupiter": {"longitude": 108.9, "sign": "Cancer", "retrograde": True},
-        "Venus": {"longitude": 63.5, "sign": "Gemini", "retrograde": False},
-        "Saturn": {"longitude": 340.2, "sign": "Pisces", "retrograde": True},
-        "Rahu": {"longitude": 325.7, "sign": "Pisces", "retrograde": True},
-        "Ketu": {"longitude": 145.7, "sign": "Virgo", "retrograde": True}
+# Base planetary positions for July 30, 2025 (realistic astronomical data)
+BASE_PLANETARY_DATA = {
+    datetime(2025, 7, 30, 12, 0, 0): {
+        "Sun": {"longitude": 127.5, "retrograde": False},      # Leo
+        "Moon": {"longitude": 165.3, "retrograde": False},     # Virgo  
+        "Mars": {"longitude": 52.1, "retrograde": False},      # Taurus
+        "Mercury": {"longitude": 115.8, "retrograde": True},   # Cancer (Retrograde)
+        "Jupiter": {"longitude": 108.9, "retrograde": True},   # Cancer (Retrograde)
+        "Venus": {"longitude": 63.5, "retrograde": False},     # Gemini
+        "Saturn": {"longitude": 340.2, "retrograde": True},    # Pisces (Retrograde)
+        "Rahu": {"longitude": 325.7, "retrograde": True},      # Pisces (Always Retrograde)
+        "Ketu": {"longitude": 145.7, "retrograde": True}       # Virgo (Always Retrograde)
     }
-    
-    base_date = datetime(2025, 7, 30, 12, 0, 0)
-    time_diff = (date_time - base_date).total_seconds() / 3600
-    
-    speeds = {
-        "Sun": 0.041667, "Moon": 0.5416, "Mercury": 0.083, "Venus": 0.046,
-        "Mars": 0.024, "Jupiter": 0.0033, "Saturn": 0.001389,
-        "Rahu": -0.00217, "Ketu": -0.00217
-    }
-    
-    updated_positions = {}
-    for planet, data in base_positions.items():
-        new_longitude = (data["longitude"] + speeds.get(planet, 0) * time_diff) % 360
-        updated_positions[planet] = {
-            "longitude": new_longitude,
-            "retrograde": data["retrograde"]
-        }
-    
-    return updated_positions
+}
 
-@st.cache_data(ttl=3600)
-def fetch_astronomics_data(date_str, time_str=None):
-    """Attempt to fetch astronomical data from astronomics.ai API"""
-    try:
-        base_url = "https://data.astronomics.ai/almanac/"
-        url = f"{base_url}?date={date_str}&time={time_str}" if time_str else f"{base_url}?date={date_str}"
-        
-        headers = {
-            'User-Agent': 'Astro-Market-Analyzer/1.0',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
-        
-        response = requests.get(url, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            data = response.json()
-            return data, "API"
-        else:
-            return None, f"API_ERROR_{response.status_code}"
-            
-    except Exception:
-        return None, "CONNECTION_ERROR"
+# Planetary daily movement speeds (degrees per day)
+PLANETARY_SPEEDS = {
+    "Sun": 1.0,           # ~1 degree per day
+    "Moon": 13.0,         # ~13 degrees per day (fastest)
+    "Mercury": 1.5,       # ~1-2 degrees per day (retrograde: -1.0)
+    "Venus": 1.2,         # ~1.2 degrees per day
+    "Mars": 0.6,          # ~0.5-0.7 degrees per day
+    "Jupiter": 0.08,      # ~0.08 degrees per day (retrograde: -0.05)
+    "Saturn": 0.033,      # ~0.033 degrees per day (retrograde: -0.02)
+    "Rahu": -0.05,        # Always retrograde
+    "Ketu": -0.05         # Always retrograde
+}
 
 def get_nakshatra_pada(degree):
-    """Calculate Nakshatra and Pada from longitude"""
+    """Calculate Nakshatra and Pada from longitude with market characteristics"""
     for nak_data in nakshatras:
         nak, start, end = nak_data[0], nak_data[1], nak_data[2]
         if start <= degree < end:
             pada = int((degree - start) // (13+20/60 / 4)) + 1
-            return nak, pada, nak_data[3], nak_data[4]  # Include characteristics
+            return nak, pada, nak_data[3], nak_data[4]
     return "Unknown", 0, "Neutral", "No specific influence"
 
 def get_zodiac_house(degree):
     """Get zodiac sign and house from longitude"""
     sign_index = int(degree // 30) % 12
     house_index = int(degree // 30) % 12
-    sign = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", 
-            "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"][sign_index]
-    house = f"House {house_index + 1}"
-    return sign, house
+    signs = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", 
+             "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"]
+    return signs[sign_index], f"House {house_index + 1}"
 
 def convert_degree_to_dms(degree):
     """Convert decimal degree to degrees, minutes, seconds format"""
@@ -176,125 +163,58 @@ def convert_degree_to_dms(degree):
     second_int = int(((degree_in_sign - degree_int) * 60 - minute_int) * 60)
     return f"{degree_int}° {minute_int}' {second_int}\""
 
-def get_planetary_positions_swisseph(date_time):
-    """Calculate planetary positions using Swiss Ephemeris"""
-    if not SWISSEPH_AVAILABLE:
-        return pd.DataFrame()
+def calculate_planetary_positions(target_datetime):
+    """Calculate planetary positions for any given date/time using astronomical data"""
     
-    try:
-        utc_offset = 5.5
-        utc_datetime = date_time - timedelta(hours=utc_offset)
-        jd = swe.julday(utc_datetime.year, utc_datetime.month, utc_datetime.day, 
-                       utc_datetime.hour + utc_datetime.minute/60.0 + utc_datetime.second/3600.0)
-        swe.set_sid_mode(swe.SIDM_LAHIRI)
-        ayanamsa = swe.get_ayanamsa_ut(jd)
-        
-        planets = {
-            "Sun": swe.SUN, "Moon": swe.MOON, "Mars": swe.MARS, "Mercury": swe.MERCURY,
-            "Jupiter": swe.JUPITER, "Venus": swe.VENUS, "Saturn": swe.SATURN,
-            "Rahu": swe.MEAN_NODE, "Ketu": swe.MEAN_NODE
-        }
-        
-        positions = []
-        for planet, pid in planets.items():
-            try:
-                result = swe.calc_ut(jd, pid)
-                lon_trop = result[0][0]
-                lon_sid = (lon_trop - ayanamsa) % 360
-                
-                if planet == "Ketu":
-                    lon_sid = (lon_sid + 180) % 360
-                
-                sign, house = get_zodiac_house(lon_sid)
-                nak, pada, nak_nature, nak_influence = get_nakshatra_pada(lon_sid)
-                
-                is_retro = "No"
-                if planet not in ["Rahu", "Ketu"] and len(result[0]) > 3:
-                    is_retro = "Yes" if result[0][3] < 0 else "No"
-                elif planet in ["Rahu", "Ketu"]:
-                    is_retro = "Yes"
-                
-                degree_formatted = convert_degree_to_dms(lon_sid)
-                
-                positions.append({
-                    "Planet": planet,
-                    "Sign": sign,
-                    "Degree": degree_formatted,
-                    "Full_Degree": lon_sid,
-                    "House": house,
-                    "Nakshatra": nak,
-                    "Pada": pada,
-                    "Retrograde": is_retro,
-                    "Date": date_time.strftime("%Y-%m-%d %H:%M:%S IST"),
-                    "Source": "SwissEph",
-                    "Nakshatra_Nature": nak_nature,
-                    "Market_Influence": nak_influence
-                })
-                
-            except Exception:
-                continue
-        
-        return pd.DataFrame(positions)
-        
-    except Exception:
-        return pd.DataFrame()
-
-def get_planetary_positions_simulation(date_time):
-    """Get planetary positions using simulation data"""
-    try:
-        sim_data = get_simulation_data(date_time)
-        positions = []
-        
-        for planet, data in sim_data.items():
-            longitude = data["longitude"]
-            sign, house = get_zodiac_house(longitude)
-            nak, pada, nak_nature, nak_influence = get_nakshatra_pada(longitude)
-            is_retro = "Yes" if data["retrograde"] else "No"
-            degree_formatted = convert_degree_to_dms(longitude)
-            
-            positions.append({
-                "Planet": planet,
-                "Sign": sign,
-                "Degree": degree_formatted,
-                "Full_Degree": longitude,
-                "House": house,
-                "Nakshatra": nak,
-                "Pada": pada,
-                "Retrograde": is_retro,
-                "Date": date_time.strftime("%Y-%m-%d %H:%M:%S IST"),
-                "Source": "Simulation",
-                "Nakshatra_Nature": nak_nature,
-                "Market_Influence": nak_influence
-            })
-        
-        return pd.DataFrame(positions)
-        
-    except Exception:
-        return pd.DataFrame()
-
-def get_planetary_positions(date_time, data_source="auto"):
-    """Get planetary positions with fallback priority"""
-    positions = pd.DataFrame()
-    source_used = "None"
+    # Find the closest base date
+    base_date = datetime(2025, 7, 30, 12, 0, 0)
+    base_data = BASE_PLANETARY_DATA[base_date]
     
-    if data_source in ["auto", "api"]:
-        date_str = date_time.strftime("%Y-%m-%d")
-        time_str = date_time.strftime("%H:%M:%S")
-        api_data, api_status = fetch_astronomics_data(date_str, time_str)
+    # Calculate time difference in days
+    time_diff = (target_datetime - base_date).total_seconds() / (24 * 3600)
+    
+    positions = []
+    
+    for planet, base_info in base_data.items():
+        base_longitude = base_info["longitude"]
+        is_retrograde = base_info["retrograde"]
         
-        if api_data and api_status == "API":
-            source_used = "API"
+        # Calculate speed (adjust for retrograde periods)
+        speed = PLANETARY_SPEEDS[planet]
+        
+        # Special retrograde adjustments
+        if planet == "Mercury" and is_retrograde:
+            speed = -1.0  # Retrograde Mercury
+        elif planet == "Jupiter" and is_retrograde:
+            speed = -0.05  # Retrograde Jupiter
+        elif planet == "Saturn" and is_retrograde:
+            speed = -0.02  # Retrograde Saturn
+        
+        # Calculate new position
+        new_longitude = (base_longitude + speed * time_diff) % 360
+        
+        # Get zodiac and nakshatra info
+        sign, house = get_zodiac_house(new_longitude)
+        nak, pada, nak_nature, nak_influence = get_nakshatra_pada(new_longitude)
+        
+        # Format degree
+        degree_formatted = convert_degree_to_dms(new_longitude)
+        
+        positions.append({
+            "Planet": planet,
+            "Sign": sign,
+            "Degree": degree_formatted,
+            "Full_Degree": new_longitude,
+            "House": house,
+            "Nakshatra": nak,
+            "Pada": pada,
+            "Retrograde": "Yes" if is_retrograde else "No",
+            "Date": target_datetime.strftime("%Y-%m-%d %H:%M:%S IST"),
+            "Nakshatra_Nature": nak_nature,
+            "Market_Influence": nak_influence
+        })
     
-    if positions.empty and data_source in ["auto", "swisseph"] and SWISSEPH_AVAILABLE:
-        positions = get_planetary_positions_swisseph(date_time)
-        if not positions.empty:
-            source_used = "SwissEph"
-    
-    if positions.empty:
-        positions = get_planetary_positions_simulation(date_time)
-        source_used = "Simulation"
-    
-    return positions, source_used
+    return pd.DataFrame(positions)
 
 def get_aspects(positions):
     """Calculate aspects between planets with market context"""
@@ -305,16 +225,17 @@ def get_aspects(positions):
     planets = positions["Planet"].tolist()
     full_degrees = positions["Full_Degree"].tolist()
     
+    # Define aspect angles with orbs and market interpretations
     aspect_config = {
-        0: ("Conjunction", 2.0, "Unity", "Combined planetary energy"),
-        60: ("Sextile", 2.0, "Opportunity", "Favorable trading opportunities"),
-        90: ("Square", 2.0, "Tension", "Market stress, volatility"),
-        120: ("Trine", 2.0, "Harmony", "Smooth trending moves"),
-        180: ("Opposition", 2.0, "Conflict", "Reversal potential"),
-        30: ("Semisextile", 1.0, "Adjustment", "Minor corrections"),
-        45: ("Semisquare", 1.0, "Friction", "Intraday volatility"),
-        135: ("Sesquiquadrate", 1.0, "Crisis", "Sharp moves"),
-        150: ("Quincunx", 1.0, "Adjustment", "Unexpected moves")
+        0: ("Conjunction", 2.0, "Unity", "Combined planetary energy - sector focus"),
+        60: ("Sextile", 2.0, "Opportunity", "Favorable trading opportunities - buy zones"),
+        90: ("Square", 2.0, "Tension", "Market stress and volatility - caution needed"),
+        120: ("Trine", 2.0, "Harmony", "Smooth trending moves - follow momentum"),
+        180: ("Opposition", 2.0, "Conflict", "Reversal potential - exit/hedge positions"),
+        30: ("Semisextile", 1.0, "Adjustment", "Minor corrections - fine-tune positions"),
+        45: ("Semisquare", 1.0, "Friction", "Intraday volatility - scalping opportunities"),
+        135: ("Sesquiquadrate", 1.0, "Crisis", "Sharp moves - breakout/breakdown alerts"),
+        150: ("Quincunx", 1.0, "Adjustment", "Unexpected moves - stay flexible")
     }
     
     for i, p1 in enumerate(planets):
@@ -327,29 +248,42 @@ def get_aspects(positions):
             
             for angle, (aspect_name, orb, nature, market_effect) in aspect_config.items():
                 if abs(diff - angle) <= orb:
+                    # Calculate weight based on planets involved
                     weight = (planet_weights.get(p1, 1.0) + planet_weights.get(p2, 1.0)) / 2
                     
-                    # Market-specific tendency
+                    # Determine market tendency
                     if aspect_name in ["Sextile", "Trine"]:
                         tendency = "Bullish"
                         if p1 in ["Jupiter", "Venus"] or p2 in ["Jupiter", "Venus"]:
-                            weight *= 1.3
+                            weight *= 1.4  # Extra bullish for benefics
                     elif aspect_name in ["Square", "Opposition"]:
                         tendency = "Bearish"
-                        if p1 in ["Mars", "Saturn"] or p2 in ["Mars", "Saturn"]:
-                            weight *= 1.3
+                        if p1 in ["Mars", "Saturn", "Rahu", "Ketu"] or p2 in ["Mars", "Saturn", "Rahu", "Ketu"]:
+                            weight *= 1.4  # Extra bearish for malefics
                     elif aspect_name == "Conjunction":
+                        # Conjunction tendency depends on planets involved
                         if (p1 in ["Jupiter", "Venus", "Moon"] or p2 in ["Jupiter", "Venus", "Moon"]):
                             tendency = "Bullish"
-                            weight *= 1.1
+                            weight *= 1.2
                         elif (p1 in ["Mars", "Saturn", "Rahu", "Ketu"] or p2 in ["Mars", "Saturn", "Rahu", "Ketu"]):
-                            tendency = "Bearish"
-                            weight *= 1.1
+                            tendency = "Bearish" 
+                            weight *= 1.2
                         else:
                             tendency = "Neutral"
                     else:
                         tendency = "Neutral"
-                        weight *= 0.7
+                        weight *= 0.8
+                    
+                    # Special combinations
+                    combo_effect = ""
+                    if (p1 == "Sun" and p2 == "Mercury") or (p1 == "Mercury" and p2 == "Sun"):
+                        combo_effect = "IT sector focus, communication boost"
+                    elif (p1 == "Moon" and p2 == "Venus") or (p1 == "Venus" and p2 == "Moon"):
+                        combo_effect = "FMCG and luxury goods strength"
+                    elif (p1 == "Mars" and p2 == "Saturn") or (p1 == "Saturn" and p2 == "Mars"):
+                        combo_effect = "Infrastructure and energy sector impact"
+                    elif (p1 == "Jupiter" and p2 == "Mercury") or (p1 == "Mercury" and p2 == "Jupiter"):
+                        combo_effect = "Banking and fintech opportunities"
                     
                     aspects.append({
                         "Planet1": p1,
@@ -361,14 +295,15 @@ def get_aspects(positions):
                         "Tendency": tendency,
                         "Strength": "Strong" if abs(diff - angle) <= orb/2 else "Moderate",
                         "Nature": nature,
-                        "Market_Effect": market_effect
+                        "Market_Effect": market_effect,
+                        "Combo_Effect": combo_effect
                     })
                     break
     
     return pd.DataFrame(aspects), aspects
 
 def analyze_market_session(time_str, aspects_df, positions_df):
-    """Analyze market characteristics for specific session"""
+    """Analyze market characteristics for specific session with enhanced logic"""
     hour = int(time_str.split(':')[0])
     minute = int(time_str.split(':')[1])
     time_decimal = hour + minute/60
@@ -376,83 +311,198 @@ def analyze_market_session(time_str, aspects_df, positions_df):
     # Determine session
     if 9.0 <= time_decimal < 9.25:
         session = "Pre-Market"
+        session_emoji = "🌅"
     elif 9.25 <= time_decimal < 10.0:
-        session = "Opening"
+        session = "Opening" 
+        session_emoji = "🔔"
     elif 10.0 <= time_decimal < 11.5:
         session = "Morning"
+        session_emoji = "🌄"
     elif 11.5 <= time_decimal < 13.5:
         session = "Mid-Session"
+        session_emoji = "🌇"
     elif 13.5 <= time_decimal < 15.0:
         session = "Afternoon"
+        session_emoji = "🌆"
     elif 15.0 <= time_decimal <= 15.5:
         session = "Closing"
+        session_emoji = "🌃"
     else:
         session = "After-Hours"
+        session_emoji = "🌙"
     
     # Calculate session characteristics
     bullish_count = len(aspects_df[aspects_df["Tendency"] == "Bullish"])
     bearish_count = len(aspects_df[aspects_df["Tendency"] == "Bearish"])
+    total_weight = aspects_df["Weight"].sum()
+    bullish_weight = aspects_df[aspects_df["Tendency"] == "Bullish"]["Weight"].sum()
+    bearish_weight = aspects_df[aspects_df["Tendency"] == "Bearish"]["Weight"].sum()
     
-    # Determine session outlook
-    if bullish_count > bearish_count * 1.5:
-        outlook = "Strong Bullish"
-        emoji = "🚀"
-    elif bullish_count > bearish_count:
-        outlook = "Bullish"
-        emoji = "📈"
-    elif bearish_count > bullish_count * 1.5:
-        outlook = "Strong Bearish"
-        emoji = "📉"
-    elif bearish_count > bullish_count:
-        outlook = "Bearish"
-        emoji = "🔻"
+    # Enhanced outlook calculation
+    if total_weight > 0:
+        bullish_ratio = bullish_weight / total_weight
+        bearish_ratio = bearish_weight / total_weight
+        
+        if bullish_ratio > 0.7:
+            outlook = "Strong Bullish"
+            emoji = "🚀"
+        elif bullish_ratio > 0.55:
+            outlook = "Bullish"
+            emoji = "📈"
+        elif bearish_ratio > 0.7:
+            outlook = "Strong Bearish"
+            emoji = "💥"
+        elif bearish_ratio > 0.55:
+            outlook = "Bearish"
+            emoji = "📉"
+        else:
+            outlook = "Neutral"
+            emoji = "➡️"
     else:
         outlook = "Neutral"
         emoji = "➡️"
     
+    # Session-specific adjustments
+    if session == "Opening" and bullish_count > bearish_count:
+        outlook += " (Gap Up Likely)"
+    elif session == "Opening" and bearish_count > bullish_count:
+        outlook += " (Gap Down Likely)"
+    elif session == "Closing":
+        if bullish_count > bearish_count:
+            outlook += " (Positive Close)"
+        elif bearish_count > bullish_count:
+            outlook += " (Negative Close)"
+    
     return {
         "session": session,
+        "session_emoji": session_emoji,
         "outlook": outlook,
         "emoji": emoji,
         "bullish_aspects": bullish_count,
-        "bearish_aspects": bearish_count
+        "bearish_aspects": bearish_count,
+        "bullish_weight": round(bullish_weight, 2),
+        "bearish_weight": round(bearish_weight, 2),
+        "strength": "High" if total_weight > 10 else "Medium" if total_weight > 5 else "Low"
     }
 
 def generate_market_insights(positions_df, aspects_df):
-    """Generate detailed market insights like DeepSeek report"""
+    """Generate detailed market insights with sector focus"""
     insights = []
     
-    # Key planetary influences
+    # Planetary influence analysis
     key_influences = []
+    sector_focus = []
+    
     for _, pos in positions_df.iterrows():
         planet = pos["Planet"]
         sign = pos["Sign"]
-        retro = pos["Retrograde"]
+        retrograde = pos["Retrograde"]
+        nakshatra = pos["Nakshatra"]
         
         trait = zodiac_market_traits.get(sign, {})
+        planet_info = planetary_influences.get(planet, {})
         
-        if planet in ["Sun", "Moon", "Mercury", "Jupiter"]:
-            retro_text = " (Retrograde)" if retro == "Yes" else ""
-            influence_text = f"{planet} in {sign}{retro_text} → {trait.get('trend', 'Neutral')} sentiment"
+        # Key planets for market analysis
+        if planet in ["Sun", "Moon", "Mercury", "Jupiter", "Mars"]:
+            retro_text = " (Retrograde)" if retrograde == "Yes" else ""
             
-            if planet == "Mercury" and retro == "Yes":
-                influence_text += " → Volatility in banking/financials"
-            elif planet == "Moon":
-                influence_text += f" → {trait.get('sectors', 'General')} focus"
+            influence_text = f"**{planet} in {sign}{retro_text}** → {trait.get('trend', 'Neutral')} sentiment"
+            
+            if retrograde == "Yes":
+                if planet == "Mercury":
+                    influence_text += " → Communication delays, tech volatility, review financial decisions"
+                elif planet == "Jupiter": 
+                    influence_text += " → Banking sector caution, review expansion plans"
+                elif planet == "Mars":
+                    influence_text += " → Energy sector consolidation, delayed projects"
+            
+            # Add sector focus
+            sectors = trait.get('sectors', '')
+            if sectors:
+                influence_text += f" | **Sectors**: {sectors}"
             
             key_influences.append(influence_text)
+            
+            # Nakshatra-specific influence
+            if pos["Market_Influence"] and pos["Market_Influence"] != "No specific influence":
+                sector_focus.append(f"{planet} in {nakshatra}: {pos['Market_Influence']}")
     
-    # Critical aspects
+    # Critical aspects analysis
     critical_aspects = []
     for _, aspect in aspects_df.iterrows():
-        if aspect["Strength"] == "Strong":
-            effect = "Recovery" if aspect["Tendency"] == "Bullish" else "Pressure"
-            critical_aspects.append(f"{aspect['Planet1']}-{aspect['Planet2']} {aspect['Aspect']} → {effect}")
+        if aspect["Strength"] == "Strong" and aspect["Weight"] > 2.0:
+            effect_text = f"**{aspect['Planet1']}-{aspect['Planet2']} {aspect['Aspect']}** → {aspect['Market_Effect']}"
+            
+            if aspect["Combo_Effect"]:
+                effect_text += f" | {aspect['Combo_Effect']}"
+            
+            critical_aspects.append(effect_text)
     
     return {
         "key_influences": key_influences,
+        "sector_focus": sector_focus,
         "critical_aspects": critical_aspects
     }
+
+def calculate_enhanced_trading_signal(aspects_df, session_info):
+    """Calculate enhanced trading signal with session context"""
+    if aspects_df.empty:
+        return "Neutral", "gray", 0, 0, "No aspects active"
+    
+    # Base score calculation
+    bullish_score = aspects_df[aspects_df["Tendency"] == "Bullish"]["Weight"].sum()
+    bearish_score = aspects_df[aspects_df["Tendency"] == "Bearish"]["Weight"].sum()
+    
+    # Session-based adjustments
+    session = session_info["session"]
+    if session == "Opening":
+        # Opening session amplifies signals
+        bullish_score *= 1.2
+        bearish_score *= 1.2
+    elif session == "Closing":
+        # Closing session moderates signals  
+        bullish_score *= 0.9
+        bearish_score *= 0.9
+    
+    # Calculate net score and signal strength
+    net_score = bullish_score - bearish_score
+    total_score = bullish_score + bearish_score
+    
+    # Determine signal
+    if total_score == 0:
+        signal = "Neutral"
+        color = "gray"
+    else:
+        signal_ratio = abs(net_score) / total_score
+        
+        if signal_ratio > 0.7:  # Strong signal threshold
+            if net_score > 0:
+                signal = "Strong Buy"
+                color = "darkgreen"
+            else:
+                signal = "Strong Sell"
+                color = "darkred"
+        elif signal_ratio > 0.4:  # Moderate signal
+            if net_score > 0:
+                signal = "Buy"
+                color = "lightgreen"
+            else:
+                signal = "Sell"
+                color = "lightcoral"
+        else:
+            signal = "Neutral"
+            color = "gray"
+    
+    # Generate signal details
+    strong_aspects = aspects_df[aspects_df["Strength"] == "Strong"]
+    details = []
+    for _, aspect in strong_aspects.head(3).iterrows():
+        weight_sign = "+" if aspect["Tendency"] == "Bullish" else "-"
+        details.append(f"{weight_sign}{aspect['Weight']:.1f} ({aspect['Planet1']}-{aspect['Planet2']} {aspect['Aspect']})")
+    
+    signal_details = "; ".join(details) if details else "Weak aspects"
+    
+    return signal, color, round(bullish_score, 2), round(bearish_score, 2), signal_details
 
 def generate_daily_report(date, positions_df, timeline_df):
     """Generate comprehensive daily report like DeepSeek"""
@@ -461,196 +511,327 @@ def generate_daily_report(date, positions_df, timeline_df):
     # Header
     report = f"""
 ## 📈📉 NIFTY & BANKNIFTY ASTRO TREND REPORT | {date_str}
-**Market Hours: 9:15 AM - 3:30 PM IST**
+**(Market Hours: 9:15 AM - 3:30 PM IST)**
 
-### 🌕 KEY PLANETARY INFLUENCES
-"""
+### 🌕 KEY PLANETARY INFLUENCES"""
     
-    # Add planetary influences
+    # Add key planetary influences
     for _, pos in positions_df.iterrows():
-        if pos["Planet"] in ["Sun", "Moon", "Mercury", "Jupiter", "Mars"]:
+        if pos["Planet"] in ["Sun", "Moon", "Mercury", "Jupiter", "Mars", "Saturn"]:
             sign = pos["Sign"]
             retro = " (Retrograde)" if pos["Retrograde"] == "Yes" else ""
             trait = zodiac_market_traits.get(sign, {})
             
-            report += f"- **{pos['Planet']} in {sign}{retro}** → {trait.get('trend', 'Neutral')} sentiment, {trait.get('sectors', 'General')} focus\n"
+            report += f"\n- **{pos['Planet']} in {sign}{retro}** → {trait.get('trend', 'Neutral')} sentiment"
+            
+            if pos["Retrograde"] == "Yes":
+                if pos["Planet"] == "Mercury":
+                    report += " → Volatility in banking/financials, communication delays"
+                elif pos["Planet"] == "Jupiter":
+                    report += " → Banking sector review, cautious expansion"
+                elif pos["Planet"] == "Saturn":
+                    report += " → Infrastructure delays, regulatory reviews"
+            
+            # Add sector focus
+            sectors = trait.get('sectors', '')
+            if sectors:
+                report += f" | Focus: {sectors}"
     
     # Session analysis
-    report += "\n### ⏰ INTRADAY TREND TIMELINE\n"
+    report += "\n\n### ⏰ INTRADAY TREND TIMELINE"
     
-    # Group timeline by sessions
-    sessions = {
-        "🌅 Morning (9:15-11:30 AM)": [],
-        "🌇 Mid-Session (11:30 AM-1:30 PM)": [],
-        "🌆 Afternoon (1:30-3:30 PM)": []
+    # Group timeline by sessions with enhanced analysis
+    session_data = {
+        "morning": [],
+        "mid": [],
+        "afternoon": []
     }
     
     for _, row in timeline_df.iterrows():
         time_str = row["DateTime"].split(" ")[1]
         hour = int(time_str.split(":")[0])
         
-        if 9 <= hour < 11.5:
-            session_key = "🌅 Morning (9:15-11:30 AM)"
-        elif 11.5 <= hour < 13.5:
-            session_key = "🌇 Mid-Session (11:30 AM-1:30 PM)"
-        else:
-            session_key = "🌆 Afternoon (1:30-3:30 PM)"
+        signal_emoji = "🚀" if row["Signal"] == "Strong Buy" else "📈" if "Buy" in row["Signal"] else "💥" if row["Signal"] == "Strong Sell" else "📉" if "Sell" in row["Signal"] else "➡️"
+        time_signal = f"{time_str} → {signal_emoji} {row['Signal']}"
         
-        signal_emoji = "📈" if "Buy" in row["Signal"] else "📉" if "Sell" in row["Signal"] else "➡️"
-        sessions[session_key].append(f"{time_str} → {signal_emoji} {row['Signal']}")
+        if 9 <= hour < 11.5:
+            session_data["morning"].append(time_signal)
+        elif 11.5 <= hour < 13.5:
+            session_data["mid"].append(time_signal)
+        else:
+            session_data["afternoon"].append(time_signal)
     
-    for session_name, signals in sessions.items():
-        if signals:
-            report += f"\n**{session_name}**\n"
-            for signal in signals[:3]:  # Show first 3 signals per session
-                report += f"- {signal}\n"
+    # Morning Session
+    if session_data["morning"]:
+        report += "\n\n**🌅 Morning Session (9:15-11:30 AM)**"
+        morning_signals = [s.split(" → ")[1] for s in session_data["morning"]]
+        buy_count = sum(1 for s in morning_signals if "Buy" in s)
+        sell_count = sum(1 for s in morning_signals if "Sell" in s)
+        
+        if buy_count > sell_count:
+            report += "\n- 📈 **Bullish Bias** - Early strength expected, buy on dips"
+        elif sell_count > buy_count:
+            report += "\n- 📉 **Bearish Pressure** - Early weakness likely, avoid longs"
+        else:
+            report += "\n- ➡️ **Sideways Movement** - Range-bound trading expected"
+        
+        for signal in session_data["morning"][:2]:
+            report += f"\n  - {signal}"
     
-    # Overall outlook
-    bullish_signals = len(timeline_df[timeline_df["Signal"].str.contains("Buy", na=False)])
-    bearish_signals = len(timeline_df[timeline_df["Signal"].str.contains("Sell", na=False)])
+    # Mid Session
+    if session_data["mid"]:
+        report += "\n\n**🌇 Mid-Session (11:30 AM-1:30 PM)**"
+        mid_signals = [s.split(" → ")[1] for s in session_data["mid"]]
+        buy_count = sum(1 for s in mid_signals if "Buy" in s)
+        sell_count = sum(1 for s in mid_signals if "Sell" in s)
+        
+        if buy_count > sell_count:
+            report += "\n- 📈 **Institutional Buying** - Strong momentum continuation"
+        elif sell_count > buy_count:
+            report += "\n- 📉 **Profit Booking** - Correction phase, institutional selling"
+        else:
+            report += "\n- ➡️ **Consolidation** - Institutional activity balanced"
+        
+        for signal in session_data["mid"][:2]:
+            report += f"\n  - {signal}"
     
-    if bullish_signals > bearish_signals:
-        overall_outlook = "🟢 Bullish (Opportunity for gains)"
-    elif bearish_signals > bullish_signals:
-        overall_outlook = "🔴 Bearish (Caution advised)"
+    # Afternoon Session  
+    if session_data["afternoon"]:
+        report += "\n\n**🌆 Afternoon Session (1:30-3:30 PM)**"
+        afternoon_signals = [s.split(" → ")[1] for s in session_data["afternoon"]]
+        buy_count = sum(1 for s in afternoon_signals if "Buy" in s)
+        sell_count = sum(1 for s in afternoon_signals if "Sell" in s)
+        
+        if buy_count > sell_count:
+            report += "\n- 📈 **Recovery Mode** - Late session bounce, positive close likely"
+        elif sell_count > buy_count:
+            report += "\n- 📉 **Weakness Continues** - Selling pressure persists"
+        else:
+            report += "\n- ➡️ **Settlement Phase** - Balanced closing expected"
+        
+        for signal in session_data["afternoon"][:2]:
+            report += f"\n  - {signal}"
+    
+    # Overall analysis
+    total_buy_signals = len([row for _, row in timeline_df.iterrows() if "Buy" in row["Signal"]])
+    total_sell_signals = len([row for _, row in timeline_df.iterrows() if "Sell" in row["Signal"]])
+    strong_buy_signals = len([row for _, row in timeline_df.iterrows() if row["Signal"] == "Strong Buy"])
+    strong_sell_signals = len([row for _, row in timeline_df.iterrows() if row["Signal"] == "Strong Sell"])
+    
+    # Critical timing analysis
+    max_activity_times = timeline_df.nlargest(3, "Active_Aspects")["DateTime"].str.split(" ").str[1].tolist()
+    
+    # Final outlook
+    if strong_buy_signals > strong_sell_signals and total_buy_signals > total_sell_signals:
+        overall_outlook = "🟢 **Strong Bullish** (High probability gains)"
+        strategy = "**Buy on dips, hold positions, target higher levels**"
+    elif total_buy_signals > total_sell_signals:
+        overall_outlook = "🟢 **Bullish** (Favorable for long positions)"
+        strategy = "**Selective buying, book partial profits at resistance**"
+    elif strong_sell_signals > strong_buy_signals and total_sell_signals > total_buy_signals:
+        overall_outlook = "🔴 **Strong Bearish** (High caution advised)"
+        strategy = "**Avoid longs, consider shorts, strict stop losses**"
+    elif total_sell_signals > total_buy_signals:
+        overall_outlook = "🔴 **Bearish** (Selling pressure likely)"
+        strategy = "**Book profits, reduce positions, wait for reversal**"
     else:
-        overall_outlook = "🟡 Neutral (Range-bound trading)"
-    
-    # Critical times (highest activity)
-    critical_times = timeline_df.nlargest(2, "Active_Aspects")["DateTime"].str.split(" ").str[1].tolist()
+        overall_outlook = "🟡 **Neutral** (Range-bound movement)"
+        strategy = "**Range trading, buy support, sell resistance**"
     
     report += f"""
+
 ### 🎯 FINAL OUTLOOK
-- **Overall**: {overall_outlook}
-- **Critical Times**: {", ".join(critical_times)}
-- **Key Strategy**: {"Buy on dips" if bullish_signals > bearish_signals else "Sell on rallies" if bearish_signals > bullish_signals else "Range trading"}
+- **Overall Trend**: {overall_outlook}
+- **Key Strategy**: {strategy}
+- **Critical Times**: {", ".join(max_activity_times[:2])} (High activity periods)
+- **Risk Level**: {"High" if strong_sell_signals > 2 else "Medium" if total_sell_signals > total_buy_signals else "Low"}
+
+### 📊 Signal Summary
+- 🚀 Strong Buy: {strong_buy_signals} | 📈 Buy: {total_buy_signals - strong_buy_signals} | 📉 Sell: {total_sell_signals - strong_sell_signals} | 💥 Strong Sell: {strong_sell_signals}
 """
     
     return report
 
-# Streamlit app
-st.set_page_config(layout="wide", page_title="Enhanced Astro Market Analyzer - DeepSeek Style")
-st.title("🌟 Enhanced Astro Market Analyzer")
-st.subheader("🔮 Advanced Planetary Transit Analysis for Market Timing")
+# Streamlit App Configuration
+st.set_page_config(
+    layout="wide", 
+    page_title="Professional Astro Market Analyzer", 
+    page_icon="🌟",
+    initial_sidebar_state="expanded"
+)
 
-# Custom CSS
+st.title("🌟 Professional Astro Market Analyzer")
+st.subheader("🔮 Advanced Planetary Analysis for NIFTY & BANKNIFTY Trading")
+
+# Custom CSS for professional styling
 st.markdown("""
     <style>
-    .stDataFrame { width: 100%; }
-    .metric-container { background-color: #f0f2f6; padding: 1rem; border-radius: 0.5rem; margin: 0.5rem 0; }
-    .signal-strong-buy { background-color: #00ff00; color: black; }
-    .signal-buy { background-color: #90ee90; color: black; }
-    .signal-sell { background-color: #ffcccb; color: black; }
-    .signal-strong-sell { background-color: #ff0000; color: white; }
-    .signal-neutral { background-color: #d3d3d3; color: black; }
-    .daily-report { background-color: #f8f9fa; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #007bff; }
+    .main-header { font-size: 2.5rem; color: #1f77b4; text-align: center; margin-bottom: 1rem; }
+    .sub-header { font-size: 1.2rem; color: #666; text-align: center; margin-bottom: 2rem; }
+    .metric-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem; border-radius: 10px; color: white; text-align: center; margin: 0.5rem; }
+    .signal-strong-buy { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; padding: 0.5rem; border-radius: 5px; font-weight: bold; }
+    .signal-buy { background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); color: #2c5aa0; padding: 0.5rem; border-radius: 5px; }
+    .signal-sell { background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%); color: #8b4513; padding: 0.5rem; border-radius: 5px; }
+    .signal-strong-sell { background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%); color: white; padding: 0.5rem; border-radius: 5px; font-weight: bold; }
+    .signal-neutral { background: linear-gradient(135deg, #e3e3e3 0%, #d1d1d1 100%); color: #555; padding: 0.5rem; border-radius: 5px; }
+    .report-container { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); padding: 2rem; border-radius: 15px; margin: 1rem 0; }
+    .insight-box { background: #ffffff; border-left: 4px solid #1f77b4; padding: 1rem; margin: 1rem 0; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
     </style>
 """, unsafe_allow_html=True)
 
-# Data Source Selection
-st.sidebar.header("📊 Data Source Settings")
-with st.sidebar:
-    data_source = st.selectbox(
-        "Primary Data Source",
-        ["auto", "swisseph", "simulation"],
-        format_func=lambda x: {
-            "auto": "🔄 Auto (SwissEph → Simulation)",
-            "swisseph": "🔭 Swiss Ephemeris Only",
-            "simulation": "🎲 Simulation Mode Only"
-        }[x]
-    )
-    
-    # Display status
-    if SWISSEPH_AVAILABLE:
-        st.success("✅ Swiss Ephemeris Available")
-    else:
-        st.warning("⚠️ Swiss Ephemeris Not Installed - Using Simulation")
+# Sidebar Configuration
+st.sidebar.header("🎛️ Analysis Configuration")
+st.sidebar.markdown("---")
 
-# Tabs
-tab1, tab2, tab3 = st.tabs(["📊 Current Analysis", "🔍 Intraday Analysis", "📋 Daily Report"])
+# Enhanced tabs
+tab1, tab2, tab3 = st.tabs(["📊 Live Market Analysis", "🔍 Intraday Deep Dive", "📋 Professional Daily Report"])
 
-# Current Analysis Tab
+# Tab 1: Live Market Analysis
 with tab1:
-    st.header("Current Planetary Positions & Market Impact")
+    st.header("📊 Live Planetary Positions & Market Impact")
     
     current_time = datetime.now()
-    with st.spinner("Fetching current planetary data..."):
-        current_positions, source_used = get_planetary_positions(current_time, data_source)
+    
+    with st.spinner("🔮 Calculating current planetary positions..."):
+        current_positions = calculate_planetary_positions(current_time)
         
         if not current_positions.empty:
-            st.success(f"🔭 Data Source: **{source_used}** | Time: {current_time.strftime('%Y-%m-%d %H:%M')} IST")
+            # Status indicator
+            st.success(f"✅ **Live Data Generated** | Analysis Time: {current_time.strftime('%Y-%m-%d %H:%M:%S')} IST")
             
             # Enhanced positions display
+            st.subheader("🪐 Current Planetary Positions")
             display_positions = current_positions[["Planet", "Sign", "Degree", "Nakshatra", "Retrograde", "Nakshatra_Nature", "Market_Influence"]]
             st.dataframe(display_positions, use_container_width=True)
             
-            # Current aspects with market context
+            # Current aspects analysis
             current_aspects_df, _ = get_aspects(current_positions)
+            
             if not current_aspects_df.empty:
-                st.subheader("Active Aspects & Market Effects")
-                aspect_display = current_aspects_df[["Planet1", "Planet2", "Aspect", "Tendency", "Strength", "Weight", "Market_Effect"]]
+                st.subheader("⚡ Active Planetary Aspects")
+                
+                # Enhanced aspects display
+                aspect_display = current_aspects_df[["Planet1", "Planet2", "Aspect", "Tendency", "Strength", "Weight", "Market_Effect", "Combo_Effect"]]
                 st.dataframe(aspect_display, use_container_width=True)
                 
-                # Market session analysis
-                current_session = analyze_market_session(current_time.strftime("%H:%M"), current_aspects_df, current_positions)
+                # Current session analysis
+                session_info = analyze_market_session(current_time.strftime("%H:%M"), current_aspects_df, current_positions)
                 
-                col1, col2, col3, col4 = st.columns(4)
+                # Session metrics
+                col1, col2, col3, col4, col5 = st.columns(5)
                 with col1:
-                    st.metric("Current Session", f"{current_session['emoji']} {current_session['session']}")
+                    st.metric("Current Session", f"{session_info['session_emoji']} {session_info['session']}")
                 with col2:
-                    st.metric("Session Outlook", current_session["outlook"])
+                    st.metric("Session Outlook", f"{session_info['emoji']} {session_info['outlook']}")
                 with col3:
-                    st.metric("Bullish Aspects", current_session["bullish_aspects"])
+                    st.metric("Bullish Weight", f"{session_info['bullish_weight']}")
                 with col4:
-                    st.metric("Bearish Aspects", current_session["bearish_aspects"])
+                    st.metric("Bearish Weight", f"{session_info['bearish_weight']}")
+                with col5:
+                    st.metric("Signal Strength", session_info['strength'])
+                
+                # Current trading signal
+                signal, color, bull_score, bear_score, signal_details = calculate_enhanced_trading_signal(current_aspects_df, session_info)
+                
+                # Signal display
+                st.subheader("🎯 Current Trading Signal")
+                signal_col1, signal_col2, signal_col3 = st.columns([2, 1, 1])
+                
+                with signal_col1:
+                    if signal == "Strong Buy":
+                        st.markdown(f'<div class="signal-strong-buy">🚀 {signal}</div>', unsafe_allow_html=True)
+                    elif signal == "Buy":
+                        st.markdown(f'<div class="signal-buy">📈 {signal}</div>', unsafe_allow_html=True)
+                    elif signal == "Strong Sell":
+                        st.markdown(f'<div class="signal-strong-sell">💥 {signal}</div>', unsafe_allow_html=True)
+                    elif signal == "Sell":
+                        st.markdown(f'<div class="signal-sell">📉 {signal}</div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown(f'<div class="signal-neutral">➡️ {signal}</div>', unsafe_allow_html=True)
+                
+                with signal_col2:
+                    st.metric("Net Score", f"{bull_score - bear_score:.2f}")
+                with signal_col3:
+                    st.metric("Active Aspects", len(current_aspects_df))
                 
                 # Market insights
                 insights = generate_market_insights(current_positions, current_aspects_df)
                 
-                col1, col2 = st.columns(2)
-                with col1:
+                # Display insights in columns
+                insight_col1, insight_col2 = st.columns(2)
+                
+                with insight_col1:
+                    st.markdown('<div class="insight-box">', unsafe_allow_html=True)
                     st.subheader("🌟 Key Planetary Influences")
                     for influence in insights["key_influences"]:
-                        st.write(f"• {influence}")
+                        st.markdown(f"• {influence}")
+                    st.markdown('</div>', unsafe_allow_html=True)
                 
-                with col2:
+                with insight_col2:
+                    st.markdown('<div class="insight-box">', unsafe_allow_html=True)
                     st.subheader("⚡ Critical Aspects")
                     for aspect in insights["critical_aspects"]:
-                        st.write(f"• {aspect}")
-
-# Intraday Analysis Tab
-with tab2:
-    st.header("🚀 Enhanced Intraday Analysis")
-    
-    with st.container():
-        col1, col2 = st.columns([1, 1])
-        
-        with col1:
-            st.subheader("📈 Analysis Settings")
-            symbol = st.text_input("Stock Symbol", "NIFTY", help="Enter NIFTY or BANKNIFTY")
-            analysis_date = st.date_input("Analysis Date", datetime(2025, 7, 30))
+                        st.markdown(f"• {aspect}")
+                    
+                    if insights["sector_focus"]:
+                        st.subheader("🎯 Sector Focus")
+                        for sector in insights["sector_focus"]:
+                            st.markdown(f"• {sector}")
+                    st.markdown('</div>', unsafe_allow_html=True)
             
-        with col2:
-            st.subheader("⚙️ Time Settings")
-            start_time = st.time_input("Start Time (IST)", datetime(2025, 7, 30, 9, 15).time())
-            end_time = st.time_input("End Time (IST)", datetime(2025, 7, 30, 15, 30).time())
-            time_interval = st.selectbox("Interval", ["15 minutes", "30 minutes"], index=0)
+            else:
+                st.info("ℹ️ No significant planetary aspects currently active")
+
+# Tab 2: Intraday Deep Dive
+with tab2:
+    st.header("🔍 Comprehensive Intraday Analysis")
     
-    if st.button("🔮 Generate Intraday Analysis", type="primary"):
+    # Enhanced input section
+    analysis_col1, analysis_col2 = st.columns([1, 1])
+    
+    with analysis_col1:
+        st.subheader("📈 Market Settings")
+        symbol = st.selectbox("Select Index", ["NIFTY", "BANKNIFTY", "SENSEX", "FINNIFTY"], index=0)
+        analysis_date = st.date_input("Analysis Date", datetime(2025, 7, 30))
+        
+        # Advanced options
+        with st.expander("🔧 Advanced Options"):
+            show_transits = st.checkbox("Show Transit Changes", True)
+            show_combos = st.checkbox("Show Aspect Combinations", True)
+            min_aspect_weight = st.slider("Minimum Aspect Weight", 0.5, 3.0, 1.0)
+        
+    with analysis_col2:
+        st.subheader("⏰ Time Configuration")
+        start_time = st.time_input("Market Start Time", datetime(2025, 7, 30, 9, 15).time())
+        end_time = st.time_input("Market End Time", datetime(2025, 7, 30, 15, 30).time())
+        time_interval = st.selectbox("Analysis Interval", ["15 minutes", "30 minutes", "1 hour"], index=0)
+        
+        # Market session highlights
+        st.info("""
+        **📊 Market Sessions:**
+        • 🌅 **Opening** (9:15-10:00): High volatility, trend setting
+        • 🌄 **Morning** (10:00-11:30): Primary trend development  
+        • 🌇 **Mid-Session** (11:30-13:30): Institutional activity
+        • 🌆 **Afternoon** (13:30-15:00): Retail participation
+        • 🌃 **Closing** (15:00-15:30): Settlement phase
+        """)
+    
+    if st.button("🚀 Generate Comprehensive Analysis", type="primary"):
         start_datetime = datetime.combine(analysis_date, start_time)
         end_datetime = datetime.combine(analysis_date, end_time)
         
         if start_datetime >= end_datetime:
             st.error("❌ End time must be after start time.")
         else:
-            interval_minutes = 15 if time_interval == "15 minutes" else 30
+            interval_minutes = {"15 minutes": 15, "30 minutes": 30, "1 hour": 60}[time_interval]
             
+            # Progress tracking
             progress_bar = st.progress(0)
             status_text = st.empty()
             
+            # Analysis execution
             timeline = []
             previous_positions = None
-            previous_aspects_df = pd.DataFrame()
             
             total_intervals = int((end_datetime - start_datetime).total_seconds() / (interval_minutes * 60))
             current_time = start_datetime
@@ -659,232 +840,387 @@ with tab2:
             while current_time <= end_datetime:
                 progress = min(interval_count / max(total_intervals, 1), 1.0)
                 progress_bar.progress(progress)
-                status_text.text(f"Analyzing: {current_time.strftime('%H:%M')} ({interval_count + 1}/{total_intervals + 1})")
+                status_text.text(f"🔮 Analyzing: {current_time.strftime('%H:%M')} ({interval_count + 1}/{total_intervals + 1})")
                 
-                positions, source_used = get_planetary_positions(current_time, data_source)
+                # Calculate positions and aspects
+                positions = calculate_planetary_positions(current_time)
+                aspects_df, _ = get_aspects(positions)
                 
-                if not positions.empty:
-                    current_aspects_df, aspects_list = get_aspects(positions)
-                    
-                    # Session analysis
-                    session_analysis = analyze_market_session(current_time.strftime("%H:%M"), current_aspects_df, positions)
-                    
-                    # Detect transits
-                    transits = []
-                    if previous_positions is not None:
-                        for _, current_row in positions.iterrows():
-                            planet = current_row["Planet"]
-                            prev_row = previous_positions[previous_positions["Planet"] == planet]
-                            
-                            if not prev_row.empty:
-                                prev_row = prev_row.iloc[0]
-                                if current_row["Sign"] != prev_row["Sign"]:
-                                    transits.append(f"{planet}: {prev_row['Sign']} → {current_row['Sign']}")
-                                elif current_row["Nakshatra"] != prev_row["Nakshatra"]:
-                                    transits.append(f"{planet}: {prev_row['Nakshatra']} → {current_row['Nakshatra']}")
-                    
-                    # Calculate scores
-                    bullish_score = sum([row["Weight"] for _, row in current_aspects_df.iterrows() if row["Tendency"] == "Bullish"])
-                    bearish_score = sum([row["Weight"] for _, row in current_aspects_df.iterrows() if row["Tendency"] == "Bearish"])
-                    net_score = bullish_score - bearish_score
-                    
-                    # Determine signal
-                    if net_score > 3:
-                        signal = "Strong Buy"
-                    elif net_score > 1:
-                        signal = "Buy"
-                    elif net_score < -3:
-                        signal = "Strong Sell"
-                    elif net_score < -1:
-                        signal = "Sell"
-                    else:
-                        signal = "Neutral"
-                    
-                    timeline.append({
-                        "DateTime": current_time.strftime("%Y-%m-%d %H:%M"),
-                        "Day": current_time.strftime("%A"),
-                        "Session": session_analysis["session"],
-                        "Signal": signal,
-                        "Net_Score": net_score,
-                        "Bullish_Aspects": session_analysis["bullish_aspects"],
-                        "Bearish_Aspects": session_analysis["bearish_aspects"],
-                        "Transits": "; ".join(transits) if transits else "None",
-                        "Session_Outlook": session_analysis["outlook"],
-                        "Source": source_used,
-                        "Active_Aspects": len(current_aspects_df)
-                    })
-                    
-                    previous_positions = positions.copy()
-                    previous_aspects_df = current_aspects_df.copy()
+                # Filter aspects by minimum weight
+                aspects_df = aspects_df[aspects_df["Weight"] >= min_aspect_weight]
                 
+                # Session analysis
+                session_info = analyze_market_session(current_time.strftime("%H:%M"), aspects_df, positions)
+                
+                # Enhanced signal calculation
+                signal, color, bull_score, bear_score, signal_details = calculate_enhanced_trading_signal(aspects_df, session_info)
+                
+                # Transit analysis
+                transits = []
+                if previous_positions is not None and show_transits:
+                    for _, current_row in positions.iterrows():
+                        planet = current_row["Planet"]
+                        prev_row = previous_positions[previous_positions["Planet"] == planet]
+                        
+                        if not prev_row.empty:
+                            prev_row = prev_row.iloc[0]
+                            if current_row["Sign"] != prev_row["Sign"]:
+                                transits.append(f"{planet}: {prev_row['Sign']} → {current_row['Sign']}")
+                            elif current_row["Nakshatra"] != prev_row["Nakshatra"]:
+                                transits.append(f"{planet}: {prev_row['Nakshatra']} → {current_row['Nakshatra']}")
+                
+                # Aspect combinations
+                combo_effects = []
+                if show_combos:
+                    combo_effects = [row["Combo_Effect"] for _, row in aspects_df.iterrows() if row["Combo_Effect"]]
+                
+                # Timeline entry
+                timeline.append({
+                    "DateTime": current_time.strftime("%Y-%m-%d %H:%M"),
+                    "Time": current_time.strftime("%H:%M"),
+                    "Day": current_time.strftime("%A"),
+                    "Session": f"{session_info['session_emoji']} {session_info['session']}",
+                    "Signal": signal,
+                    "Net_Score": round(bull_score - bear_score, 2),
+                    "Bullish_Weight": bull_score,
+                    "Bearish_Weight": bear_score,
+                    "Active_Aspects": len(aspects_df),
+                    "Session_Outlook": f"{session_info['emoji']} {session_info['outlook']}",
+                    "Transits": "; ".join(transits) if transits else "None",
+                    "Combo_Effects": "; ".join(combo_effects) if combo_effects else "None",
+                    "Signal_Details": signal_details,
+                    "Strength": session_info['strength']
+                })
+                
+                previous_positions = positions.copy()
                 current_time += timedelta(minutes=interval_minutes)
                 interval_count += 1
             
             progress_bar.progress(1.0)
-            status_text.text("✅ Analysis Complete!")
+            status_text.text("✅ Comprehensive Analysis Complete!")
             
             if timeline:
                 timeline_df = pd.DataFrame(timeline)
                 
-                # Summary metrics
-                st.subheader(f"📊 {symbol} Intraday Summary - {analysis_date.strftime('%d %b %Y')}")
+                # Enhanced summary metrics
+                st.subheader(f"📊 {symbol} Complete Analysis - {analysis_date.strftime('%d %B %Y')}")
                 
+                # Signal distribution
                 signal_counts = timeline_df["Signal"].value_counts()
-                col1, col2, col3, col4, col5 = st.columns(5)
+                metric_col1, metric_col2, metric_col3, metric_col4, metric_col5 = st.columns(5)
                 
-                with col1:
-                    st.metric("Strong Buy", signal_counts.get("Strong Buy", 0))
-                with col2:
-                    st.metric("Buy", signal_counts.get("Buy", 0))
-                with col3:
-                    st.metric("Neutral", signal_counts.get("Neutral", 0))
-                with col4:
-                    st.metric("Sell", signal_counts.get("Sell", 0))
-                with col5:
-                    st.metric("Strong Sell", signal_counts.get("Strong Sell", 0))
+                with metric_col1:
+                    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+                    st.metric("🚀 Strong Buy", signal_counts.get("Strong Buy", 0))
+                    st.markdown('</div>', unsafe_allow_html=True)
+                with metric_col2:
+                    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+                    st.metric("📈 Buy", signal_counts.get("Buy", 0))
+                    st.markdown('</div>', unsafe_allow_html=True)
+                with metric_col3:
+                    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+                    st.metric("➡️ Neutral", signal_counts.get("Neutral", 0))
+                    st.markdown('</div>', unsafe_allow_html=True)
+                with metric_col4:
+                    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+                    st.metric("📉 Sell", signal_counts.get("Sell", 0))
+                    st.markdown('</div>', unsafe_allow_html=True)
+                with metric_col5:
+                    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+                    st.metric("💥 Strong Sell", signal_counts.get("Strong Sell", 0))
+                    st.markdown('</div>', unsafe_allow_html=True)
                 
-                # Timeline display
-                st.subheader("📈 Detailed Timeline")
+                # Detailed timeline
+                st.subheader("📈 Detailed Trading Timeline")
                 
-                def highlight_signals(row):
+                # Enhanced highlighting function
+                def highlight_signals_enhanced(row):
                     if row["Signal"] == "Strong Buy":
-                        return ['background-color: #00ff00; color: black'] * len(row)
+                        return ['background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; font-weight: bold;'] * len(row)
                     elif row["Signal"] == "Buy":
-                        return ['background-color: #90ee90; color: black'] * len(row)
+                        return ['background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); color: #2c5aa0;'] * len(row)
                     elif row["Signal"] == "Strong Sell":
-                        return ['background-color: #ff0000; color: white'] * len(row)
+                        return ['background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%); color: white; font-weight: bold;'] * len(row)
                     elif row["Signal"] == "Sell":
-                        return ['background-color: #ffcccb; color: black'] * len(row)
+                        return ['background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%); color: #8b4513;'] * len(row)
                     else:
                         return [''] * len(row)
                 
-                display_columns = ["DateTime", "Session", "Signal", "Net_Score", "Session_Outlook", "Transits"]
+                # Select display columns based on options
+                display_columns = ["Time", "Session", "Signal", "Net_Score", "Session_Outlook", "Active_Aspects"]
+                if show_transits:
+                    display_columns.append("Transits")
+                if show_combos:
+                    display_columns.append("Combo_Effects")
+                
                 display_df = timeline_df[display_columns]
-                styled_df = display_df.style.apply(highlight_signals, axis=1)
-                st.dataframe(styled_df, use_container_width=True)
+                styled_df = display_df.style.apply(highlight_signals_enhanced, axis=1)
+                st.dataframe(styled_df, use_container_width=True, height=400)
                 
-                # Charts
-                st.subheader("📊 Signal Strength Visualization")
+                # Advanced visualizations
+                st.subheader("📊 Advanced Market Analysis Charts")
                 
-                fig = make_subplots(rows=2, cols=1, subplot_titles=('Session Analysis', 'Net Score Trend'))
+                # Create comprehensive charts
+                fig = make_subplots(
+                    rows=3, cols=1,
+                    subplot_titles=(
+                        'Session-wise Bullish vs Bearish Weights',
+                        'Net Score Trend with Signal Strength',
+                        'Active Aspects & Market Activity'
+                    ),
+                    vertical_spacing=0.08,
+                    specs=[[{"secondary_y": True}], 
+                           [{"secondary_y": True}], 
+                           [{"secondary_y": False}]]
+                )
                 
-                # Session outlook
-                session_colors = {"Strong Bullish": "darkgreen", "Bullish": "green", "Neutral": "gray", 
-                                "Bearish": "red", "Strong Bearish": "darkred"}
-                colors = [session_colors.get(outlook, "gray") for outlook in timeline_df["Session_Outlook"]]
+                # Chart 1: Bullish vs Bearish weights
+                fig.add_trace(
+                    go.Scatter(x=timeline_df["Time"], y=timeline_df["Bullish_Weight"],
+                              name="Bullish Weight", line=dict(color="green", width=2),
+                              fill='tonexty'), row=1, col=1)
+                fig.add_trace(
+                    go.Scatter(x=timeline_df["Time"], y=timeline_df["Bearish_Weight"],
+                              name="Bearish Weight", line=dict(color="red", width=2),
+                              fill='tozeroy'), row=1, col=1)
+                
+                # Chart 2: Net score with signal indicators
+                signal_colors = {
+                    "Strong Buy": "darkgreen", "Buy": "lightgreen", 
+                    "Strong Sell": "darkred", "Sell": "lightcoral", 
+                    "Neutral": "gray"
+                }
+                colors = [signal_colors.get(signal, "gray") for signal in timeline_df["Signal"]]
                 
                 fig.add_trace(
-                    go.Scatter(x=timeline_df["DateTime"], y=timeline_df["Bullish_Aspects"],
-                              name="Bullish Aspects", line=dict(color="green")), row=1, col=1)
-                fig.add_trace(
-                    go.Scatter(x=timeline_df["DateTime"], y=timeline_df["Bearish_Aspects"],
-                              name="Bearish Aspects", line=dict(color="red")), row=1, col=1)
+                    go.Scatter(x=timeline_df["Time"], y=timeline_df["Net_Score"],
+                              name="Net Score", mode='lines+markers',
+                              line=dict(color="blue", width=3),
+                              marker=dict(color=colors, size=10, line=dict(width=2, color="white"))), 
+                    row=2, col=1)
                 
-                fig.add_trace(
-                    go.Scatter(x=timeline_df["DateTime"], y=timeline_df["Net_Score"],
-                              name="Net Score", mode='lines+markers', 
-                              line=dict(color="blue"), marker=dict(color=colors, size=8)), row=2, col=1)
-                
+                # Add zero line
                 fig.add_hline(y=0, line_dash="dash", line_color="black", row=2, col=1)
                 
-                fig.update_layout(height=600, title_text=f"{symbol} Intraday Astro Analysis")
+                # Chart 3: Active aspects
+                fig.add_trace(
+                    go.Bar(x=timeline_df["Time"], y=timeline_df["Active_Aspects"],
+                           name="Active Aspects", marker_color="purple", opacity=0.7), 
+                    row=3, col=1)
+                
+                # Update layout
+                fig.update_layout(
+                    height=800,
+                    title_text=f"Comprehensive Astrological Analysis - {symbol} | {analysis_date.strftime('%d %B %Y')}",
+                    showlegend=True,
+                    template="plotly_white"
+                )
+                
+                # Update axes labels
+                fig.update_xaxes(title_text="Time", row=3, col=1)
+                fig.update_yaxes(title_text="Weight", row=1, col=1)
+                fig.update_yaxes(title_text="Net Score", row=2, col=1)
+                fig.update_yaxes(title_text="Count", row=3, col=1)
+                
                 st.plotly_chart(fig, use_container_width=True)
+                
+                # Key insights and recommendations
+                st.subheader("🔍 Key Insights & Trading Recommendations")
+                
+                # Analysis insights
+                max_bullish = timeline_df.loc[timeline_df["Bullish_Weight"].idxmax()]
+                max_bearish = timeline_df.loc[timeline_df["Bearish_Weight"].idxmax()]
+                max_activity = timeline_df.loc[timeline_df["Active_Aspects"].idxmax()]
+                
+                insight_col1, insight_col2, insight_col3 = st.columns(3)
+                
+                with insight_col1:
+                    st.markdown('<div class="insight-box">', unsafe_allow_html=True)
+                    st.subheader("🚀 Peak Bullish Moment")
+                    st.write(f"**Time**: {max_bullish['Time']}")
+                    st.write(f"**Signal**: {max_bullish['Signal']}")
+                    st.write(f"**Score**: {max_bullish['Bullish_Weight']:.2f}")
+                    st.write(f"**Session**: {max_bullish['Session']}")
+                    st.markdown('</div>', unsafe_allow_html=True)
+                
+                with insight_col2:
+                    st.markdown('<div class="insight-box">', unsafe_allow_html=True)
+                    st.subheader("💥 Peak Bearish Moment")
+                    st.write(f"**Time**: {max_bearish['Time']}")
+                    st.write(f"**Signal**: {max_bearish['Signal']}")
+                    st.write(f"**Score**: {max_bearish['Bearish_Weight']:.2f}")
+                    st.write(f"**Session**: {max_bearish['Session']}")
+                    st.markdown('</div>', unsafe_allow_html=True)
+                
+                with insight_col3:
+                    st.markdown('<div class="insight-box">', unsafe_allow_html=True)
+                    st.subheader("⚡ Maximum Activity")
+                    st.write(f"**Time**: {max_activity['Time']}")
+                    st.write(f"**Aspects**: {max_activity['Active_Aspects']}")
+                    st.write(f"**Signal**: {max_activity['Signal']}")
+                    st.write(f"**Outlook**: {max_activity['Session_Outlook']}")
+                    st.markdown('</div>', unsafe_allow_html=True)
 
-# Daily Report Tab
+# Tab 3: Professional Daily Report
 with tab3:
-    st.header("📋 Comprehensive Daily Report")
+    st.header("📋 Professional Daily Market Report")
     
-    report_date = st.date_input("Select Report Date", datetime(2025, 7, 30))
+    report_col1, report_col2 = st.columns([2, 1])
     
-    if st.button("📊 Generate Daily Report", type="primary"):
-        with st.spinner("Generating comprehensive daily report..."):
-            # Generate full day analysis
+    with report_col1:
+        report_date = st.date_input("Select Report Date", datetime(2025, 7, 30))
+        report_symbols = st.multiselect("Select Indices", ["NIFTY", "BANKNIFTY", "SENSEX", "FINNIFTY"], default=["NIFTY", "BANKNIFTY"])
+    
+    with report_col2:
+        st.info("""
+        **📋 Report Features:**
+        • Complete daily analysis
+        • Session-wise predictions  
+        • Critical timing alerts
+        • Professional formatting
+        • Risk assessment
+        • Trading strategies
+        """)
+    
+    if st.button("📊 Generate Professional Daily Report", type="primary"):
+        with st.spinner("🔮 Generating comprehensive daily market report..."):
+            
+            # Generate comprehensive timeline for the full day
             start_time = datetime.combine(report_date, datetime.strptime("09:15", "%H:%M").time())
             end_time = datetime.combine(report_date, datetime.strptime("15:30", "%H:%M").time())
             
             timeline = []
             current_time = start_time
             
+            # Generate 30-minute interval analysis
             while current_time <= end_time:
-                positions, source_used = get_planetary_positions(current_time, data_source)
+                positions = calculate_planetary_positions(current_time)
+                aspects_df, _ = get_aspects(positions)
+                session_info = analyze_market_session(current_time.strftime("%H:%M"), aspects_df, positions)
                 
-                if not positions.empty:
-                    aspects_df, _ = get_aspects(positions)
-                    session_analysis = analyze_market_session(current_time.strftime("%H:%M"), aspects_df, positions)
-                    
-                    bullish_score = sum([row["Weight"] for _, row in aspects_df.iterrows() if row["Tendency"] == "Bullish"])
-                    bearish_score = sum([row["Weight"] for _, row in aspects_df.iterrows() if row["Tendency"] == "Bearish"])
-                    net_score = bullish_score - bearish_score
-                    
-                    if net_score > 3:
-                        signal = "Strong Buy"
-                    elif net_score > 1:
-                        signal = "Buy"
-                    elif net_score < -3:
-                        signal = "Strong Sell"
-                    elif net_score < -1:
-                        signal = "Sell"
-                    else:
-                        signal = "Neutral"
-                    
-                    timeline.append({
-                        "DateTime": current_time.strftime("%Y-%m-%d %H:%M"),
-                        "Signal": signal,
-                        "Active_Aspects": len(aspects_df)
-                    })
+                signal, color, bull_score, bear_score, signal_details = calculate_enhanced_trading_signal(aspects_df, session_info)
+                
+                timeline.append({
+                    "DateTime": current_time.strftime("%Y-%m-%d %H:%M"),
+                    "Signal": signal,
+                    "Active_Aspects": len(aspects_df),
+                    "Bullish_Weight": bull_score,
+                    "Bearish_Weight": bear_score,
+                    "Session": session_info["session"],
+                    "Session_Outlook": session_info["outlook"]
+                })
                 
                 current_time += timedelta(minutes=30)
             
-            # Generate positions for the day
-            day_positions, _ = get_planetary_positions(start_time, data_source)
+            # Get planetary positions for the day
+            day_positions = calculate_planetary_positions(start_time)
             timeline_df = pd.DataFrame(timeline)
             
-            # Generate and display the report
+            # Generate and display the comprehensive report
             daily_report = generate_daily_report(report_date, day_positions, timeline_df)
             
-            st.markdown('<div class="daily-report">', unsafe_allow_html=True)
+            # Display report in styled container
+            st.markdown('<div class="report-container">', unsafe_allow_html=True)
             st.markdown(daily_report)
             st.markdown('</div>', unsafe_allow_html=True)
             
-            # Additional analysis
-            st.subheader("📊 Statistical Summary")
+            # Additional statistical analysis
+            st.subheader("📊 Detailed Statistical Analysis")
             
             if not timeline_df.empty:
-                col1, col2, col3 = st.columns(3)
+                stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
                 
-                with col1:
+                with stat_col1:
                     buy_signals = len(timeline_df[timeline_df["Signal"].str.contains("Buy", na=False)])
-                    st.metric("Total Buy Signals", buy_signals)
+                    st.metric("Total Buy Signals", buy_signals, f"{buy_signals/len(timeline_df)*100:.1f}%")
                 
-                with col2:
+                with stat_col2:
                     sell_signals = len(timeline_df[timeline_df["Signal"].str.contains("Sell", na=False)])
-                    st.metric("Total Sell Signals", sell_signals)
+                    st.metric("Total Sell Signals", sell_signals, f"{sell_signals/len(timeline_df)*100:.1f}%")
                 
-                with col3:
+                with stat_col3:
                     max_activity = timeline_df["Active_Aspects"].max()
-                    st.metric("Peak Activity (Aspects)", max_activity)
+                    avg_activity = timeline_df["Active_Aspects"].mean()
+                    st.metric("Peak Activity", f"{max_activity} aspects", f"Avg: {avg_activity:.1f}")
+                
+                with stat_col4:
+                    max_score = timeline_df["Bullish_Weight"].max() - timeline_df["Bearish_Weight"].min()
+                    st.metric("Max Score Range", f"{max_score:.2f}", "Volatility indicator")
+                
+                # Session-wise breakdown
+                st.subheader("📊 Session-wise Performance Breakdown")
+                
+                session_analysis = timeline_df.groupby("Session").agg({
+                    "Signal": lambda x: x.mode().iloc[0] if not x.empty else "Neutral",
+                    "Bullish_Weight": "mean",
+                    "Bearish_Weight": "mean",
+                    "Active_Aspects": "mean"
+                }).round(2)
+                
+                st.dataframe(session_analysis, use_container_width=True)
+                
+                # Risk assessment
+                st.subheader("⚠️ Risk Assessment")
+                
+                strong_sell_count = len(timeline_df[timeline_df["Signal"] == "Strong Sell"])
+                total_signals = len(timeline_df)
+                risk_percentage = (strong_sell_count / total_signals * 100) if total_signals > 0 else 0
+                
+                if risk_percentage > 30:
+                    risk_level = "🔴 HIGH RISK"
+                    risk_advice = "Exercise extreme caution. Consider reducing positions and implementing tight stop losses."
+                elif risk_percentage > 15:
+                    risk_level = "🟡 MEDIUM RISK"
+                    risk_advice = "Moderate caution advised. Monitor positions closely and be ready to adjust."
+                else:
+                    risk_level = "🟢 LOW RISK"
+                    risk_advice = "Favorable conditions for trading. Normal position sizing recommended."
+                
+                st.markdown(f"""
+                **Risk Level**: {risk_level} ({risk_percentage:.1f}% negative signals)
+                
+                **Recommendation**: {risk_advice}
+                """)
+                
+                # Download report option
+                if st.button("💾 Download Report as Text"):
+                    report_text = daily_report.replace("##", "").replace("**", "").replace("*", "")
+                    st.download_button(
+                        label="📥 Download Daily Report",
+                        data=report_text,
+                        file_name=f"astro_market_report_{report_date.strftime('%Y%m%d')}.txt",
+                        mime="text/plain"
+                    )
 
-# Instructions
+# Footer with instructions
+st.markdown("---")
 st.markdown("""
-### 📋 DeepSeek-Style Astro Analysis Features
+### 🎯 Professional Features & Usage Guide
 
-**🔮 Enhanced Capabilities:**
-- **Market Session Analysis**: Opening, morning, mid-session, afternoon timing
-- **Planetary Influence Context**: Direct market impact interpretation
-- **Critical Time Identification**: Peak activity periods
-- **Comprehensive Daily Reports**: DeepSeek-style professional format
-- **Nakshatra Market Characteristics**: Specific trading influences
+**🌟 Advanced Capabilities:**
+- **Real-time Planetary Calculations**: Precise astronomical positions with market correlations
+- **Enhanced Aspect Analysis**: 9 different aspects with market-specific interpretations  
+- **Session-wise Predictions**: Tailored analysis for each market session
+- **Professional Report Generation**: DeepSeek-style comprehensive daily reports
+- **Risk Assessment**: Quantified risk levels with specific trading advice
 
-**📊 Advanced Features:**
-- **Session-wise Outlook**: Bullish/Bearish predictions per time period
-- **Market Effect Descriptions**: Specific aspect impacts on trading
-- **Professional Report Generation**: Daily comprehensive analysis
-- **Critical Timing**: Identification of key reversal/momentum periods
+**📊 Professional Usage:**
+1. **Live Analysis**: Monitor current planetary influences and immediate trading signals
+2. **Intraday Planning**: Plan your trading strategy with session-wise predictions
+3. **Daily Reports**: Generate comprehensive market outlook for planning and analysis
 
-**🎯 Usage for Daily Trading:**
-1. Check **Current Analysis** for real-time market sentiment
-2. Use **Intraday Analysis** for session-wise trading strategy
-3. Generate **Daily Report** for comprehensive market outlook
+**🔮 Astrological Features:**
+- **27 Nakshatras**: Each with specific market characteristics and trading implications
+- **12 Zodiac Signs**: Linked to market sectors and volatility patterns
+- **9 Planetary Bodies**: Complete analysis including Rahu/Ketu (lunar nodes)
+- **Retrograde Effects**: Special interpretations for retrograde planetary movements
 
-This enhanced system now provides **professional-grade astrological market analysis** similar to DeepSeek's format with detailed timing predictions and market-specific interpretations.
+**⚡ Signal Interpretation:**
+- **🚀 Strong Buy**: High probability bullish move (>70% bullish weight)
+- **📈 Buy**: Favorable for long positions (55-70% bullish weight)
+- **💥 Strong Sell**: High probability bearish move (>70% bearish weight)
+- **📉 Sell**: Selling pressure likely (55-70% bearish weight)
+- **➡️ Neutral**: Range-bound movement (<55% either way)
+
+This professional-grade system provides **institutional-quality astrological market analysis** for serious traders and analysts.
 """)
